@@ -180,6 +180,8 @@ La carpeta `docs/` contiene documentación técnica, funcional, operativa y de s
 - [`docs/indice-documentacion.md`](docs/indice-documentacion.md)  
   Índice maestro de la documentación del proyecto.
 
+- [`docs/estructura-documentacion.md`](docs/estructura-documentacion.md)  
+  Propuesta de organización futura de la documentación por categorías.
 ---
 
 ### Arquitectura y estructura
@@ -395,7 +397,7 @@ Aun así, la documentación debe considerarse viva y seguir actualizándose conf
 - base de datos
 - infraestructura
 - procesos operativos
-
+ 
 ---
 
 ## Recomendaciones de trabajo
@@ -405,7 +407,9 @@ Aun así, la documentación debe considerarse viva y seguir actualizándose conf
 - registrar resultados en `docs/bitacora-cambios.md`
 - agregar nuevos pendientes en `docs/backlog-tecnico.md`
 - revisar periódicamente `docs/roadmap.md` para orientar prioridades
+- usar `docs/estructura-documentacion.md` como referencia si en el futuro se reorganiza `docs/`
 - mantener `README.md` y `docs/indice-documentacion.md` sincronizados
+
 
 ---
 

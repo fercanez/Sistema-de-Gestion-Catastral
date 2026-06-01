@@ -49,9 +49,12 @@ Incluye:
 ### `docs/indice-documentacion.md`
 Mapa general del conjunto documental.
 
----
-
-## Arquitectura y estructura técnica
+### `docs/estructura-documentacion.md`
+Propuesta de organización futura para la carpeta `docs/`:
+- estructura objetivo
+- categorías temáticas
+- estrategia de migración
+- reglas de crecimiento documental
 
 ### `docs/arquitectura-tecnica.md`
 Describe la arquitectura general del sistema:
@@ -330,6 +333,7 @@ Orden recomendado:
 | Priorizar mejoras | `docs/pendientes-tecnicos.md`, `docs/backlog-tecnico.md` |
 | Entender términos | `docs/glosario.md` |
 | Entender cómo usar el sistema como usuario | `docs/manual-usuarios.md`, `docs/faq-operativa.md` |
+| Entender cómo está organizada o cómo debería organizarse la documentación | `docs/estructura-documentacion.md`, `docs/indice-documentacion.md` |
 ---
 
 ## Recomendaciones de mantenimiento documental
