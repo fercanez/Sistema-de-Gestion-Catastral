@@ -1,198 +1,268 @@
-# Sistema de Gestión Catastral Base en Baja California
+# Sistema de Gestión Catastral BC
 
-## Descripción
+Sistema backend y documental para operación catastral, consulta predial, expediente, propietarios, movimientos catastrales y administración, con soporte geoespacial e integración operativa con PostgreSQL y GeoNode.
 
-Sistema de Gestión Catastral orientado al ámbito municipal en Baja California, diseñado para integrar y administrar información catastral, padrón predial y cartografía dentro de una plataforma web centralizada.
+---
 
-El sistema está concebido como una base funcional para un catastro municipal completo, con capacidades de consulta, homologación, análisis de información territorial, generación de reportes y visualización geográfica.
+## Descripción general
 
-## Objetivo del proyecto
+Este proyecto implementa una API basada en FastAPI para la operación de procesos catastrales institucionales.
 
-El objetivo principal del proyecto es construir un sistema integral de gestión catastral municipal con capacidad para:
+Entre sus capacidades principales se encuentran:
 
-- realizar consultas entre padrón y cartografía
-- validar información homologada entre distintas fuentes
-- generar reportes
-- mostrar información geográfica
-- facilitar la posible generación de mapas
-- apoyar procesos de limpieza, catalogación y organización de datos catastrales
+- autenticación y autorización con JWT
+- consulta de padrón predial
+- expediente integral
+- consulta y administración de propietarios
+- captura y aplicación de movimientos catastrales
+- mantenimiento de catálogos
+- control de acceso por roles y permisos
+- integración con componentes geoespaciales
+- servicio de archivos estáticos y documentos asociados al visor
 
-## Stack tecnológico
+---
 
-### Backend
-- **Python**
-- **FastAPI**
-- **Uvicorn**
+## Stack principal
 
-### Frontend
-- **HTML**
-- **CSS**
-- **JavaScript**
+- Python
+- FastAPI
+- Uvicorn
+- PostgreSQL
+- psycopg2
+- python-dotenv
+- python-jose
+- passlib
+- bcrypt
 
-### Base de datos
-- **PostgreSQL**
-
-### Infraestructura
-- **Servidor Linux**
-- **systemd** para administración del servicio
-- **GeoNode v5** como parte del entorno operativo geoespacial
-
-## Arquitectura general
-
-La aplicación expone una API catastral construida con FastAPI y organizada por módulos o routers funcionales.
-
-Actualmente se identifican componentes para:
-
-- autenticación
-- movimientos
-- movimientos heredados o legacy
-- padrón
-- expediente
-- administración
-- propietarios
-- catálogos
-
-Además, el sistema se complementa con archivos cartográficos, documentos PDF, tablas auxiliares y otros insumos necesarios para la operación catastral.
+---
 
 ## Estructura general del proyecto
 
-La estructura actual del repositorio incluye componentes como:
+Componentes principales identificados:
 
-- `auth/`: autenticación y control de acceso
-- `routers/`: rutas principales del sistema
-- `scripts/`: utilerías y procesos auxiliares
-- `catalogos/`: catálogos de referencia y homologación
-- `main.py`: punto de entrada principal de la API
-- `config.py`: configuración del sistema
-- `database.py`: conexión y utilidades de base de datos
-- `index.html`: interfaz base
-- archivos cartográficos (`.shp`, `.dbf`, `.prj`, `.shx`, `.cpg`)
-- archivos documentales y de apoyo (`.pdf`, `.xlsx`, etc.)
+- `main.py`  
+  Punto de entrada de la aplicación.
 
-## Módulos identificados en la API
+- `config.py`  
+  Configuración general y carga de variables de entorno.
 
-Con base en la estructura actual del proyecto, la API registra routers para módulos como:
+- `database.py`  
+  Conexión a PostgreSQL.
 
-- autenticación
-- movimientos
-- movimientos legacy
-- padrón
-- expediente
-- administración
-- propietarios
-- catálogos
+- `auth/`  
+  Autenticación, dependencias de seguridad, modelos y ACL.
 
-Esto permite una arquitectura modular y facilita la evolución progresiva del sistema.
+- `routers/`  
+  Endpoints por dominio funcional:
+  - movimientos
+  - movimientos legacy
+  - padrón
+  - expediente
+  - administración
+  - propietarios
+  - catálogos
 
-## Visor web
+- `docs/`  
+  Documentación técnica y operativa del sistema.
 
-El sistema también incluye un visor web expuesto mediante la ruta:
+---
 
-```text
-/visor
+## Requisitos
+
+Dependencias principales del backend:
+
+```txt
+fastapi
+uvicorn
+psycopg2-binary
+python-dotenv
+python-jose
+passlib
+bcrypt
 ```
 
-Desde esta ruta se sirven recursos estáticos y archivos de interfaz como:
+---
 
-- `index.html`
-- `catastro.css`
-- `catastro.js`
-- `movimientos_padron_v57.js`
-- `logomxli.png`
+## Configuración
 
-Esto indica que el proyecto no solo expone una API, sino también una parte visual para consulta e interacción.
+El sistema utiliza variables de entorno cargadas desde un archivo `.env`.
 
-## Variables de entorno
+Variables observadas:
 
-El sistema requiere un archivo `.env` con variables como las siguientes:
+- `SECRET_KEY`
+- `JWT_ALGORITHM`
+- `ACCESS_TOKEN_EXPIRE_MINUTES`
+- `DB_HOST`
+- `DB_PORT`
+- `DB_NAME`
+- `DB_USER`
+- `DB_PASSWORD`
 
-```env
-SECRET_KEY=coloca_aqui_una_clave_segura
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=480
+> Importante: la aplicación no debe ejecutarse con una `SECRET_KEY` insegura o vacía.
 
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=nombre_bd
-DB_USER=usuario
-DB_PASSWORD=contrasena
-```
-
-> Importante: la API no arranca si `SECRET_KEY` no está definida de forma segura.
-
-## Instalación
-
-Crear entorno virtual e instalar dependencias:
-
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+---
 
 ## Ejecución local
 
-Para iniciar la aplicación de forma local:
+Ejemplo de ejecución con Uvicorn:
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 9000
 ```
 
-## Despliegue en servidor
+---
 
-La aplicación se ejecuta en un servidor Linux como un servicio administrado con `systemd`.
+## Despliegue observado
 
-### Servicio del sistema
-```bash
-catastro-api.service
-```
+En producción se identificó una ejecución equivalente a:
 
-### Ejemplo de ejecución observada
 ```bash
 /opt/catastro_api/venv/bin/python3 /opt/catastro_api/venv/bin/uvicorn main:app --host 0.0.0.0 --port 9000
 ```
 
-### Características del despliegue actual
-- servicio activo en Linux mediante `systemd`
-- entorno virtual ubicado en `/opt/catastro_api/venv`
-- API expuesta en el puerto `9000`
-- operación integrada dentro de un entorno con GeoNode v5
+Y un servicio Linux administrado con `systemd`:
 
-## Capacidades funcionales del sistema
+```text
+catastro-api.service
+```
 
-Entre las capacidades previstas o ya incorporadas dentro del proyecto se encuentran:
+---
 
-- consulta de información catastral
-- cruce de información entre padrón y cartografía
-- homologación de registros y claves
-- consulta de expedientes
-- administración de catálogos
-- gestión de propietarios
-- manejo de movimientos
-- soporte para procesos de análisis, limpieza y catalogación
-- generación de reportes
-- base para visualización geográfica
+## Documentación disponible
 
-## Estado actual del proyecto
+La carpeta `docs/` contiene documentación técnica y operativa del sistema.
 
-Proyecto en desarrollo y consolidación.
+### Índice documental
 
-Actualmente se encuentra en una etapa de integración funcional, documentación y organización del repositorio, con enfoque en construir una base robusta para un sistema catastral municipal completo.
+- [`docs/arquitectura-tecnica.md`](docs/arquitectura-tecnica.md)  
+  Arquitectura técnica general del sistema.
 
-## Próximas líneas de trabajo
+- [`docs/modelo-de-datos.md`](docs/modelo-de-datos.md)  
+  Descripción funcional inicial del modelo de datos.
 
-- fortalecer la homologación entre padrón y cartografía
-- documentar con mayor detalle cada módulo
-- mejorar la organización del repositorio
-- separar con mayor claridad código, datos y documentos
-- formalizar la generación de reportes y mapas
-- ampliar procesos de limpieza y catalogación de información
-- documentar endpoints y flujos operativos
+- [`docs/endpoints.md`](docs/endpoints.md)  
+  Inventario inicial de endpoints confirmados y probables.
 
-## Uso previsto
+- [`docs/flujos-operativos.md`](docs/flujos-operativos.md)  
+  Flujos funcionales principales del sistema.
 
-Sistema orientado principalmente a uso técnico, administrativo e institucional dentro de procesos de gestión catastral municipal.
+- [`docs/despliegue.md`](docs/despliegue.md)  
+  Guía de despliegue manual y validación posterior.
 
-## Autor
+- [`docs/operacion-servidor.md`](docs/operacion-servidor.md)  
+  Operación del servidor, servicios y rutas relevantes.
 
-Proyecto gestionado por `fercanez`.
+---
+
+## Módulos funcionales principales
+
+### Autenticación y seguridad
+Responsable de:
+- login
+- validación de token
+- control por roles
+- control por permisos
+- auditoría de acceso
+
+### Padrón
+Responsable de:
+- ficha predial
+- consultas alfanuméricas
+- consultas espaciales
+- zonas homogéneas
+- régimen y tenencia
+
+### Propietarios
+Responsable de:
+- catálogo de personas
+- relación propietario-predio
+- actualización de domicilio
+- sincronización de titularidad
+
+### Expediente
+Responsable de:
+- expediente integral
+- historial
+- documentos
+- control cartográfico
+
+### Movimientos
+Responsable de:
+- captura de movimientos
+- revisión
+- autorización
+- aplicación de cambios al padrón
+- trazabilidad operativa
+
+### Catálogos
+Responsable de:
+- calles
+- colonias
+- catálogos auxiliares del sistema
+
+### Administración
+Responsable de:
+- usuarios
+- roles
+- contraseñas
+- auditoría administrativa
+
+---
+
+## Validación operativa mínima
+
+Después de cambios o despliegues, se recomienda validar al menos:
+
+- login
+- ficha predial
+- historial de expediente
+- documentos de expediente
+- propietarios por predio
+
+Rutas observadas:
+
+```text
+GET /padron/{clave}/ficha
+GET /expediente/{clave}/historial
+GET /expediente/{clave}/documentos
+GET /predios/{clave}/propietarios
+```
+
+---
+
+## Observaciones técnicas
+
+El sistema presenta una arquitectura modular funcional y orientada a operación institucional, con fortalezas en:
+
+- separación por dominios
+- seguridad basada en JWT
+- soporte de auditoría
+- integración predial y cartográfica
+- despliegue real en entorno Linux
+
+También existen oportunidades de mejora en:
+
+- formalización de migraciones
+- modularización de routers grandes
+- consolidación de rutas legacy
+- ampliación de pruebas automatizadas
+- fortalecimiento del proceso de despliegue
+
+---
+
+## Estado de la documentación
+
+La documentación actual representa una base inicial para mantenimiento y transferencia de conocimiento.
+
+Se recomienda continuar con documentos adicionales como:
+
+- permisos y roles
+- glosario institucional/técnico
+- diccionario de datos detallado
+- guía de respaldo y recuperación
+
+---
+
+## Licencia
+
+Pendiente de definir según política institucional o del repositorio.
