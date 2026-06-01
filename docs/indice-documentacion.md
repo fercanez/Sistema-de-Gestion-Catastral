@@ -194,6 +194,16 @@ Manual de soporte inicial:
 - escalación
 - registro
 
+### `docs/manual-usuarios.md`
+Manual general para usuarios:
+- ingreso al sistema
+- consulta de ficha predial
+- consulta de expediente
+- documentos
+- propietarios
+- movimientos
+- reporte básico de problemas
+
 ### `docs/incidentes-comunes.md`
 Catálogo de incidentes frecuentes:
 - síntomas
@@ -209,7 +219,6 @@ Preguntas frecuentes operativas:
 - incidencias
 - documentación
 - cambios en producción
-
 ---
 
 ## Gestión técnica y mejora continua
@@ -320,7 +329,7 @@ Orden recomendado:
 | Resolver dudas rápidas | `docs/faq-operativa.md` |
 | Priorizar mejoras | `docs/pendientes-tecnicos.md`, `docs/backlog-tecnico.md` |
 | Entender términos | `docs/glosario.md` |
-
+| Entender cómo usar el sistema como usuario | `docs/manual-usuarios.md`, `docs/faq-operativa.md` |
 ---
 
 ## Recomendaciones de mantenimiento documental
@@ -358,6 +367,14 @@ Si se desea ampliar la documentación, los siguientes serían buenos candidatos:
 - `docs/faq-desarrollo.md`
 
 ---
+
+## 6. Usuario general
+Orden recomendado:
+
+1. `docs/manual-usuarios.md`
+2. `docs/faq-operativa.md`
+3. `docs/flujos-operativos.md`
+
 | Planear evolución del sistema | `docs/roadmap.md`, `docs/backlog-tecnico.md` |
 ## Resumen
 

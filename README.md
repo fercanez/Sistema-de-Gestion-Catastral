@@ -240,12 +240,14 @@ La carpeta `docs/` contiene documentación técnica, funcional, operativa y de s
 - [`docs/manual-soporte.md`](docs/manual-soporte.md)  
   Guía para atención inicial de soporte.
 
+- [`docs/manual-usuarios.md`](docs/manual-usuarios.md)  
+  Manual general para usuarios del sistema.
+
 - [`docs/incidentes-comunes.md`](docs/incidentes-comunes.md)  
   Catálogo de incidentes frecuentes y reacción inicial.
 
 - [`docs/faq-operativa.md`](docs/faq-operativa.md)  
   Preguntas frecuentes de operación, soporte y administración.
-
 ---
 
 ### Gestión técnica y mejora continua
