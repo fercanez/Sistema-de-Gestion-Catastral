@@ -358,7 +358,7 @@ Si se desea ampliar la documentación, los siguientes serían buenos candidatos:
 - `docs/faq-desarrollo.md`
 
 ---
-
+| Planear evolución del sistema | `docs/roadmap.md`, `docs/backlog-tecnico.md` |
 ## Resumen
 
 Este índice organiza la documentación del proyecto como una base de conocimiento navegable para perfiles técnicos, operativos, funcionales y de soporte.

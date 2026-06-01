@@ -255,6 +255,36 @@ La carpeta `docs/` contiene documentación técnica, funcional, operativa y de s
 - [`docs/backlog-tecnico.md`](docs/backlog-tecnico.md)  
   Backlog técnico inicial priorizado.
 
+- [`docs/roadmap.md`](docs/roadmap.md)  
+  ## Gestión técnica y mejora continua
+
+### `docs/pendientes-tecnicos.md`
+Lista razonada de hallazgos y áreas de mejora:
+- seguridad
+- despliegue
+- datos
+- pruebas
+- documentación
+- infraestructura
+
+### `docs/backlog-tecnico.md`
+Backlog inicial priorizado:
+- ID
+- tema
+- pendiente
+- prioridad
+- estado sugerido
+- observaciones
+- fases sugeridas
+
+### `docs/roadmap.md`
+Hoja de ruta técnica y operativa del sistema:
+- horizontes de trabajo
+- prioridades por fase
+- evolución sugerida
+- dependencias
+- indicadores simples
+- próximos pasos
 ---
 
 ## Orden de lectura sugerido
@@ -372,6 +402,7 @@ Aun así, la documentación debe considerarse viva y seguir actualizándose conf
 - usar `docs/checklist-produccion.md` antes de cambios productivos
 - registrar resultados en `docs/bitacora-cambios.md`
 - agregar nuevos pendientes en `docs/backlog-tecnico.md`
+- revisar periódicamente `docs/roadmap.md` para orientar prioridades
 - mantener `README.md` y `docs/indice-documentacion.md` sincronizados
 
 ---
