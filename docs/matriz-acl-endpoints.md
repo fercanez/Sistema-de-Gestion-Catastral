@@ -248,14 +248,14 @@ Comparación entre **intención ACL** y **comportamiento real**:
 
 ### GAP — alinear con ACL
 
-| ID | Hallazgo | Acción sugerida |
-|---|---|---|
-| ACL-G01 | `requerir_permiso()` no se usa | Migrar routers a permisos ACL |
-| ACL-G02 | Dos fuentes de rol (JWT vs `usuario_roles`) | Unificar; refrescar JWT o validar siempre en BD |
-| ACL-G03 | Duplicidad admin (`/seguridad/*` vs `/admin/*`) | Consolidar rutas y un solo mecanismo |
-| ACL-G04 | Supervisor con `ver_auditoria` sin ruta | Permitir supervisor en auditoría o quitar permiso ACL |
-| ACL-G05 | Cartografia/fiscalizacion sin acceso a movimientos/historial | Definir si deben consultar historial de movimientos |
-| ACL-G06 | Lectura de catálogos calles/colonias restringida | GET con `consulta`; POST/PUT/DELETE con `editar_catastro` |
+| ID | Hallazgo | Acción sugerida | Estado |
+|---|---|---|---|
+| ACL-G01 | `requerir_permiso()` no se usa | Migrar routers a permisos ACL | **Corregido** (2026-06-01) |
+| ACL-G02 | Dos fuentes de rol (JWT vs `usuario_roles`) | Unificar; refrescar JWT o validar siempre en BD | **Corregido** (2026-06-01) |
+| ACL-G03 | Duplicidad admin (`/seguridad/*` vs `/admin/*`) | Consolidar rutas y un solo mecanismo | **Parcial** — mismo ACL; rutas legacy conservadas |
+| ACL-G04 | Supervisor con `ver_auditoria` sin ruta | Permitir supervisor en auditoría o quitar permiso ACL | **Corregido** (2026-06-01) |
+| ACL-G05 | Cartografia/fiscalizacion sin acceso a movimientos/historial | Definir si deben consultar historial de movimientos | **Corregido** (2026-06-01) |
+| ACL-G06 | Lectura de catálogos calles/colonias restringida | GET con `consulta`; POST/PUT/DELETE con `editar_catastro` | **Corregido** (2026-06-01) |
 
 ---
 
@@ -305,7 +305,7 @@ Propuesta de mapeo para la **fase de corrección** (BT-003 implementación):
 2. **Introducir `requerir_permiso()`** en expediente y padrón lectura (bajo riesgo, alto alineamiento).
 3. **Refactor propietarios:** dependencia `permiso_propietarios_lectura` vs `permiso_propietarios_escritura`.
 4. **Unificar fuente de rol** en login y dependencias.
-5. **Agregar pruebas** que validen matriz por rol (BT-019).
+5. **Agregar pruebas** que validen matriz por rol (BT-019). Ver `scripts/smoke_test_api.py` y `tests/test_acl_anon.py`.
 
 ---
 

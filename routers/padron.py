@@ -8,14 +8,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from auth.dependencies import obtener_usuario_actual, registrar_auditoria, requerir_permiso, requerir_permiso_token_o_query
+from auth.dependencies import registrar_auditoria, requerir_permiso, requerir_permiso_token_o_query
+from database import get_conn, asegurar_tabla_predio_condominio
+
+router = APIRouter(tags=["padron"])
 
 _permiso_consulta = requerir_permiso("consulta")
 _permiso_editar_catastro = requerir_permiso("editar_catastro")
 _permiso_consulta_query = requerir_permiso_token_o_query("consulta")
-from database import get_conn, asegurar_tabla_predio_condominio
-
-router = APIRouter(tags=["padron"])
 
 # Misma lógica de nombre que copropietarios / propietarios.py (evita desfase con v_titularidad_predio).
 SQL_NOMBRE_PERSONA_TITULAR = """

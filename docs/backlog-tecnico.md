@@ -59,8 +59,8 @@ Se recomienda usar uno de estos estados para dar seguimiento:
 |---|---|---|---|---|---|
 | BT-001 | Seguridad | Revisar robustez y resguardo de `SECRET_KEY` | Alta | pendiente | Crítico para autenticación JWT |
 | BT-002 | Seguridad | Revisar expiración y política de tokens | Alta | pendiente | Confirmar tiempos y estrategia de sesión |
-| BT-003 | Seguridad | Formalizar matriz rol -> permiso -> endpoint | Alta | en progreso | Matriz en `docs/matriz-acl-endpoints.md`; CRIT ACL-C01–C05 corregidos en código (2026-06-01) |
-| BT-004 | Seguridad | Auditar endpoints sensibles de administración y movimientos | Alta | pendiente | Confirmar que todos validen rol y permiso |
+| BT-003 | Seguridad | Formalizar matriz rol -> permiso -> endpoint | Alta | hecho | Matriz + CRIT/GAP implementados en código (2026-06-01) |
+| BT-004 | Seguridad | Auditar endpoints sensibles de administración y movimientos | Alta | hecho | ACL aplicada en admin, movimientos, propietarios, catálogos, expediente, padrón |
 | BT-005 | Despliegue | Formalizar procedimiento estándar de despliegue | Alta | pendiente | Reducir cambios manuales no trazables |
 | BT-006 | Despliegue | Mantener fuente Git controlada para despliegues | Alta | pendiente | Evitar diferencias entre código fuente y producción |
 | BT-007 | Despliegue | Documentar instalación reproducible del entorno | Media | pendiente | Python, venv, dependencias, servicio |
@@ -75,8 +75,8 @@ Se recomienda usar uno de estos estados para dar seguimiento:
 | BT-016 | Arquitectura | Centralizar/documentar SQL crítico | Media | pendiente | Evitar lógica dispersa y opaca |
 | BT-017 | Arquitectura | Evaluar consolidación o retiro de rutas legacy | Media | pendiente | Especialmente módulo de movimientos legacy |
 | BT-018 | Validación | Fortalecer validación de entrada en payloads y parámetros | Media | pendiente | Claves, ids, rutas, datos sensibles |
-| BT-019 | Pruebas | Crear pruebas automatizadas mínimas | Alta | pendiente | Login, ficha, historial, documentos, propietarios |
-| BT-020 | Pruebas | Implementar smoke tests post-despliegue | Alta | pendiente | Validación rápida de endpoints críticos |
+| BT-019 | Pruebas | Crear pruebas automatizadas mínimas | Alta | hecho | `tests/test_acl_anon.py` (ACL sin auth); smoke script cubre flujos autenticados |
+| BT-020 | Pruebas | Implementar smoke tests post-despliegue | Alta | hecho | `scripts/smoke_test_api.py` |
 | BT-021 | Pruebas | Preparar dataset o ambiente de prueba controlado | Media | pendiente | Reducir dependencia de producción |
 | BT-022 | Documentación | Mantener README sincronizado con docs/ | Media | pendiente | Evitar desfase documental |
 | BT-023 | Documentación | Ampliar glosario institucional/técnico | Baja | pendiente | Abreviaturas y términos locales |
