@@ -701,3 +701,375 @@ Para exploración técnica en ambiente activo, complementar esta documentación 
 - `/redoc`
 
 según la configuración final del despliegue y el prefijo publicado de la aplicación.
+
+## Módulo de propietarios
+
+El módulo de propietarios concentra la gestión de personas, titulares, relaciones propietario-predio, sincronización con padrón y clasificación de información de condominio.
+
+A nivel funcional, este módulo parece ser uno de los núcleos principales del sistema para mantener homologada la información entre:
+
+- padrón catastral
+- catálogo de personas
+- relaciones predio-propietario
+- clasificación de condominios
+- datos de domicilio asociados a personas
+
+### Modelos detectados
+
+#### `PropietarioPersonaPayload`
+
+Modelo utilizado para crear o actualizar personas del catálogo.
+
+```json
+{
+  "tipo_persona": "FISICA",
+  "nombre": "JUAN",
+  "apellido_paterno": "PEREZ",
+  "apellido_materno": "LOPEZ",
+  "razon_social": null,
+  "rfc": "XXXX000000XXX",
+  "curp": null,
+  "activo": true,
+  "calle": "CALLE EJEMPLO",
+  "colonia": "COLONIA EJEMPLO",
+  "numof": "123",
+  "cp": "21000",
+  "delegacion": "CENTRO"
+}
+```
+
+#### `PredioPropietarioPayload`
+
+Modelo para asociar una persona a un predio.
+
+```json
+{
+  "id_persona": 1,
+  "porcentaje_propiedad": 100,
+  "tipo_titularidad": "PROPIETARIO"
+}
+```
+
+#### `PredioPropietarioUpdatePayload`
+
+Modelo para actualizar porcentaje o tipo de titularidad de una relación.
+
+```json
+{
+  "porcentaje_propiedad": 50,
+  "tipo_titularidad": "COPROPIETARIO"
+}
+```
+
+#### `PredioPropietariosReemplazoPayload`
+
+Modelo para reemplazar en bloque los propietarios de un predio.
+
+```json
+{
+  "propietarios": [
+    {
+      "id_persona": 1,
+      "porcentaje_propiedad": 50,
+      "tipo_titularidad": "PROPIETARIO"
+    },
+    {
+      "id_persona": 2,
+      "porcentaje_propiedad": 50,
+      "tipo_titularidad": "COPROPIETARIO"
+    }
+  ]
+}
+```
+
+#### `FusionarPropietariosPayload`
+
+Modelo para fusionar varios propietarios hacia una persona destino.
+
+```json
+{
+  "id_persona_destino": 1,
+  "id_personas_origen": [2, 3, 4]
+}
+```
+
+#### `SincronizarPadronMasivoPayload`
+
+Modelo para sincronización masiva entre catálogo y padrón.
+
+```json
+{
+  "confirmar": false,
+  "texto_padron": "",
+  "limite": 5000
+}
+```
+
+#### `PredioCondominioPayload`
+
+Modelo para registrar o actualizar información de condominio de un predio.
+
+```json
+{
+  "modalidad": "VERTICAL",
+  "nombre_condominio": "CONDOMINIO EJEMPLO",
+  "observaciones": "Observaciones",
+  "propagar_grupo": true
+}
+```
+
+#### `CondominioClasificacionBuscarPayload`
+
+Modelo para buscar predios candidatos a clasificación de condominio.
+
+```json
+{
+  "claves_texto": "",
+  "claves": [],
+  "nombre_condominio": "",
+  "colonia": "",
+  "calle": "",
+  "numof": "",
+  "clave_prefijo": "",
+  "q": "",
+  "solo_regimen_c": true,
+  "limite": 500,
+  "offset": 0
+}
+```
+
+#### `CondominioClasificacionMasivaPayload`
+
+Modelo para clasificar varios predios como condominio.
+
+```json
+{
+  "claves": ["CLAVE1", "CLAVE2"],
+  "modalidad": "VERTICAL",
+  "nombre_condominio": "CONDOMINIO EJEMPLO",
+  "observaciones": "Clasificación masiva"
+}
+```
+
+---
+
+## Capacidades funcionales detectadas
+
+Con base en las funciones observadas en `routers/propietarios.py`, el módulo cubre al menos estas áreas:
+
+### 1. Búsqueda en catálogo de propietarios
+
+Se detectan funciones para:
+
+- buscar propietarios en catálogo
+- buscar por apellidos
+- buscar por nombres
+- buscar por razones sociales
+- buscar calles en catálogo
+
+Funciones detectadas:
+- `buscar_propietarios_catalogo`
+- `buscar_apellidos_catalogo`
+- `buscar_nombres_catalogo`
+- `buscar_razones_sociales_catalogo`
+- `buscar_calles_catalogo`
+
+### 2. Mantenimiento de personas del catálogo
+
+Se detectan operaciones de alta, consulta, actualización y baja lógica de personas.
+
+Funciones detectadas:
+- `obtener_propietario_catalogo`
+- `crear_propietario_catalogo`
+- `actualizar_propietario_catalogo`
+- `eliminar_propietario_catalogo`
+
+### 3. Mantenimiento y normalización de calles
+
+Además del módulo `catalogos`, aquí también existe capacidad para trabajar calles asociadas a propietarios.
+
+Funciones detectadas:
+- `crear_calle_catalogo`
+
+### 4. Fusión de propietarios duplicados
+
+Se detecta una operación específica para homologación de personas repetidas o duplicadas.
+
+Funciones detectadas:
+- `fusionar_propietarios_catalogo`
+
+Esta capacidad es especialmente importante cuando:
+- una misma persona aparece con variantes de nombre
+- existe desfase entre padrón y catálogo
+- se requiere consolidar historial o relaciones hacia una sola persona destino
+
+### 5. Asociación propietario-predio
+
+Se detectan operaciones para administrar relaciones entre personas y claves catastrales.
+
+Funciones detectadas:
+- `listar_propietarios_predio_v28`
+- `agregar_propietario_predio_v28`
+- `actualizar_propietario_predio_v28`
+- `quitar_propietario_predio_v28`
+- `reemplazar_propietarios_predio_v28`
+
+Esto sugiere que el sistema permite:
+- consultar titulares por predio
+- agregar nuevos copropietarios
+- ajustar porcentajes de propiedad
+- cambiar tipo de titularidad
+- reemplazar completamente la estructura de propietarios asociada a un predio
+
+### 6. Sincronización catálogo ↔ padrón
+
+Uno de los componentes más importantes del módulo es la sincronización de nombres y relaciones entre el padrón y el catálogo de personas.
+
+Funciones detectadas:
+- `refrescar_nombre_padron_desde_catalogo_v28`
+- `resumen_desfase_padron_catalogo`
+- `sincronizar_padron_catalogo_masivo_v28`
+- `sincronizar_padron_nombre_persona_v28`
+- `sincronizar_padron_titular_predio_v28`
+- `sincronizar_padron_nombre_claves_v28`
+- `titular_padron_sincronizado_v28`
+
+Esto indica que el módulo puede ayudar a:
+
+- alinear nombres de titulares en `catalogos.padron_2026`
+- detectar diferencias entre padrón y catálogo
+- propagar cambios desde el catálogo de personas
+- corregir nombres de titulares vigentes por predio
+- ejecutar procesos masivos de normalización
+
+### 7. Gestión de domicilio de personas
+
+El modelo `PropietarioPersonaPayload` y las funciones auxiliares muestran soporte para domicilio:
+
+- calle
+- colonia
+- número oficial
+- código postal
+- delegación
+
+Funciones auxiliares detectadas:
+- `asegurar_columnas_domicilio_persona`
+- `domicilio_persona_desde_payload`
+
+Esto sugiere que el catálogo de personas puede enriquecerse no solo con identidad, sino también con datos de localización o contacto territorial.
+
+### 8. Gestión de condominios por predio
+
+El módulo también contiene lógica para clasificar predios bajo régimen de condominio y registrar atributos asociados.
+
+Funciones detectadas:
+- `obtener_condominio_predio_v28`
+- `guardar_condominio_predio_v28`
+- `normalizar_modalidad_condominio`
+- `etiqueta_modalidad_condominio`
+- `sugerir_modalidad_condominio`
+- `obtener_info_condominio_predio_v28`
+- `upsert_predio_condominio_v28`
+
+Esto sugiere operaciones como:
+- registrar modalidad
+- registrar nombre de condominio
+- almacenar observaciones
+- propagar clasificación a grupos relacionados
+- sugerir modalidad según contexto predial
+
+### 9. Clasificación masiva de condominios
+
+Se detectan funciones orientadas a búsqueda, análisis y clasificación masiva:
+
+- `listar_nombres_condominio_v28`
+- `buscar_clasificacion_condominio_v28`
+- `clasificacion_masiva_condominio_v28`
+
+Esto puede servir para:
+- encontrar predios similares por nombre de condominio
+- revisar coincidencias por calle, colonia, número oficial o prefijo de clave
+- aplicar clasificación grupal a múltiples claves catastrales
+
+### 10. Validaciones y utilerías de homologación
+
+También se observan funciones auxiliares para normalización y validación:
+
+- `upper_clean_v28`
+- `normalizar_nombre_fusion_v28`
+- `parse_nombre_padron_v28`
+- `es_nombre_moral_v28`
+- `resolver_persona_por_nombre_padron_v28`
+- `fila_propietario_padron_v28`
+- `validar_porcentaje_v28`
+- `suma_propiedad_vigente_v28`
+- `registrar_auditoria_simple_v28`
+
+Estas funciones reflejan que el módulo ya incorpora lógica para:
+- limpieza de texto
+- normalización de nombres
+- distinción entre persona física y moral
+- validación de porcentajes de propiedad
+- auditoría de operaciones
+
+---
+
+## Operaciones probables del módulo
+
+Con base en los nombres de funciones y modelos detectados, el módulo de propietarios probablemente expone endpoints para operaciones como:
+
+- buscar personas del catálogo
+- obtener una persona específica
+- crear una persona
+- actualizar una persona
+- desactivar una persona
+- fusionar propietarios duplicados
+- listar propietarios de un predio
+- agregar propietario a un predio
+- actualizar propietario de un predio
+- eliminar/quitar propietario de un predio
+- reemplazar propietarios de un predio
+- resumir desfase entre padrón y catálogo
+- sincronizar nombres del padrón
+- obtener y actualizar clasificación de condominio
+- ejecutar clasificación masiva de condominio
+
+> Importante: estas operaciones están inferidas a partir del código compartido, pero las rutas HTTP exactas (`GET`, `POST`, `PUT`, `DELETE`) deben confirmarse con el archivo completo sin recortes.
+
+---
+
+## Dependencias funcionales observadas
+
+Este módulo parece apoyarse en:
+
+- autenticación por usuario actual
+- tablas de catálogo de personas
+- relaciones `predio_propietario`
+- padrón `catalogos.padron_2026`
+- estructuras auxiliares para condominio
+- auditoría simple de acciones
+
+También parece ser un módulo fuertemente conectado con:
+
+- `padron`
+- `movimientos`
+- `catalogos`
+
+---
+
+## Recomendación de documentación futura
+
+Para completar la documentación exacta del módulo de propietarios, hace falta una segunda pasada con:
+
+- las rutas completas decoradas con `@router.get`, `@router.post`, `@router.put`, `@router.delete`
+- prefijos concretos
+- parámetros `Query`, `Path` y `Body`
+- respuestas reales por endpoint
+
+Una vez se tenga esa versión completa, conviene convertir esta sección en:
+
+1. **endpoints confirmados**
+2. **payloads**
+3. **respuestas esperadas**
+4. **roles/permisos requeridos**
+5. **casos de uso comunes**
