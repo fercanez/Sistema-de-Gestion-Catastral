@@ -5,14 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 
-from auth.dependencies import requerir_permiso
 from database import get_conn
+from routers.movimientos import permiso_movimientos
 from routers.propietarios import registrar_auditoria_simple_v28, upper_clean_v28
 
 router = APIRouter(tags=["catalogos"])
-
-_permiso_catalogos_lectura = requerir_permiso("consulta")
-_permiso_catalogos_escritura = requerir_permiso("editar_catastro")
 
 
 class NombreCallePayload(BaseModel):
@@ -239,7 +236,7 @@ def _fusionar_catalogo(
 def buscar_calles_mantenimiento(
     q: str = Query("", max_length=150),
     limite: int = Query(150, ge=1, le=500),
-    usuario_actual: dict = Depends(_permiso_catalogos_lectura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     texto = upper_clean_v28(q) or ""
     if not texto:
@@ -271,7 +268,7 @@ def buscar_calles_mantenimiento(
 def crear_calle_mantenimiento(
     payload: NombreCallePayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_catalogos_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     nombre = upper_clean_v28(payload.nombre_calle)
     if not nombre:
@@ -305,7 +302,7 @@ def actualizar_calle_mantenimiento(
     id_calle: int,
     payload: NombreCallePayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_catalogos_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     nombre = upper_clean_v28(payload.nombre_calle)
     if not nombre:
@@ -371,7 +368,7 @@ def actualizar_calle_mantenimiento(
 def baja_calle_mantenimiento(
     id_calle: int,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_catalogos_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -397,7 +394,7 @@ def baja_calle_mantenimiento(
 def fusionar_calles_mantenimiento(
     payload: FusionarCatalogoPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_catalogos_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -422,7 +419,7 @@ def fusionar_calles_mantenimiento(
 def buscar_colonias_mantenimiento(
     q: str = Query("", max_length=150),
     limite: int = Query(150, ge=1, le=500),
-    usuario_actual: dict = Depends(_permiso_catalogos_lectura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     texto = upper_clean_v28(q) or ""
     if not texto:
@@ -454,7 +451,7 @@ def buscar_colonias_mantenimiento(
 def crear_colonia_mantenimiento(
     payload: NombreColoniaPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_catalogos_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     nombre = upper_clean_v28(payload.nombre_colonia)
     if not nombre:
@@ -488,7 +485,7 @@ def actualizar_colonia_mantenimiento(
     id_colonia: int,
     payload: NombreColoniaPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_catalogos_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     nombre = upper_clean_v28(payload.nombre_colonia)
     if not nombre:
@@ -554,7 +551,7 @@ def actualizar_colonia_mantenimiento(
 def baja_colonia_mantenimiento(
     id_colonia: int,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_catalogos_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -580,7 +577,7 @@ def baja_colonia_mantenimiento(
 def fusionar_colonias_mantenimiento(
     payload: FusionarCatalogoPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_catalogos_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:

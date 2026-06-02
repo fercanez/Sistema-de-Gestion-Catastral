@@ -38,8 +38,8 @@ def startup_migraciones():
         with get_conn() as conn:
             with conn.cursor() as cur:
                 asegurar_tabla_predio_condominio(cur, conn)
-    except Exception:
-        pass
+        except Exception:
+            pass
 
 
 @app.get("/")

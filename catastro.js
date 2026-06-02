@@ -722,6 +722,20 @@ function aplicarSeleccionVisualPredio(clave, geometry = null) {
   refrescarLeyendaDespuesDeCambio();
 }
 
+// Indica si la geometría ya está (prácticamente) dentro de la vista actual,
+// para evitar el "brinco" de recentrar el mapa al hacer clic en un predio visible.
+function geometriaVisibleEnVista(geometry) {
+  if (!geometry || typeof map === "undefined" || !map) return false;
+  try {
+    const ext = geometry.getExtent ? geometry.getExtent() : null;
+    if (!ext || ol.extent.isEmpty(ext)) return false;
+    const vista = map.getView().calculateExtent(map.getSize());
+    return ol.extent.containsExtent(vista, ext);
+  } catch (e) {
+    return false;
+  }
+}
+
 function hacerZoomAGeometria(geometry, options = {}) {
   if (!geometry || typeof map === "undefined" || !map) return false;
 
@@ -1636,29 +1650,6 @@ async function cargarHistorial(clave) {
   }
 }
 
-async function abrirDocumentoExpediente(clave, nombreArchivo) {
-  if (!obtenerTokenInstitucional()) {
-    alert("Sesión expirada. Vuelva a iniciar sesión.");
-    return;
-  }
-  try {
-    const r = await fetch(
-      `${API}/documentos/${encodeURIComponent(clave)}/${encodeURIComponent(nombreArchivo)}`,
-      { headers: authHeaders() }
-    );
-    if (!r.ok) {
-      throw new Error(`HTTP ${r.status}`);
-    }
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  } catch (err) {
-    console.error(err);
-    alert("No fue posible abrir el documento.");
-  }
-}
-
 async function cargarDocumentos(clave) {
   const contenedor = document.getElementById("sec-documentos");
   if (!contenedor || !clave) return;
@@ -1680,14 +1671,14 @@ async function cargarDocumentos(clave) {
 
     let html = "";
     documentos.forEach(doc => {
-      const nombreArchivo = doc.nombre_archivo || "";
+      const urlDoc = `${API}/documentos/${clave}/${doc.nombre_archivo}`;
       html += `
         <div class="timeline-item">
           <div class="timeline-fecha">${doc.tipo_documento || "DOCUMENTO"}</div>
-          <div class="timeline-user">${nombreArchivo}</div>
+          <div class="timeline-user">${doc.nombre_archivo || ""}</div>
           <div class="timeline-obs">${doc.descripcion || "Sin descripción"}</div>
           <div class="timeline-obs">Año: ${doc.anio || "Sin dato"}</div>
-          <button style="margin-top:5px; padding:4px;" onclick="abrirDocumentoExpediente(${JSON.stringify(clave)}, ${JSON.stringify(nombreArchivo)})">Abrir documento</button>
+          <button style="margin-top:5px; padding:4px;" onclick="window.open('${urlDoc}', '_blank')">Abrir documento</button>
         </div>
       `;
     });
@@ -3094,11 +3085,42 @@ function registrarEnterBusquedas() {
   });
 }
 
-async function seleccionarPorClave(clave, origen = "programa") {
+async function seleccionarPorClave(clave, origen = "programa", opciones = {}) {
   if (!clave) return;
 
   const claveNorm = String(clave).trim().toUpperCase();
+  const claveAnterior = claveSeleccionadaActual;
   const seq = ++seleccionPredioSeq;
+
+  // Feedback visual inmediato: si el clic en el mapa ya trajo la geometría
+  // (vía /predios/intersecta), pintamos el contorno y reencuadramos sin esperar
+  // a que termine de cargar la ficha (/expediente), que es lo que se sentía lento.
+  let zoomYaAplicado = false;
+  const geojsonPrefetch = opciones?.geojsonPrefetch;
+  if (geojsonPrefetch?.geometry && origen === "mapa") {
+    try {
+      const formatPre = new ol.format.GeoJSON({
+        dataProjection: "EPSG:4326",
+        featureProjection: "EPSG:3857"
+      });
+      const geomPre = formatPre.readFeature(geojsonPrefetch).getGeometry();
+      if (geomPre) {
+        const enResultadosPre = resultadosSource?.getFeatures().some(
+          f => String(f.get("clave_catastral") || "").toUpperCase() === claveNorm
+        );
+        if (!enResultadosPre) pintarGeoJSON(geojsonPrefetch, false);
+        aplicarSeleccionVisualPredio(claveNorm, geomPre);
+        claveSeleccionadaActual = claveNorm;
+        const debeZoomPre = claveNorm !== claveAnterior && !geometriaVisibleEnVista(geomPre);
+        if (debeZoomPre) {
+          programarZoomPredioSeleccionado(geomPre, {}, seq);
+          zoomYaAplicado = true;
+        }
+      }
+    } catch (e) {
+      /* si falla, seguimos con el flujo normal */
+    }
+  }
 
   const fichaGeojsonResponse = await fetch(`${API}/expediente/${encodeURIComponent(claveNorm)}?_=${Date.now()}`, {
     cache: "no-store",
@@ -3121,7 +3143,7 @@ async function seleccionarPorClave(clave, origen = "programa") {
     f => String(f.get("clave_catastral") || "").toUpperCase() === claveNorm
   );
 
-  const debeHacerZoom = origen !== "mapa" || claveNorm !== claveSeleccionadaActual;
+  let debeHacerZoom = origen !== "mapa" || claveNorm !== claveSeleccionadaActual;
   let geomParaZoom = null;
 
   if (enResultados) {
@@ -3166,6 +3188,17 @@ async function seleccionarPorClave(clave, origen = "programa") {
 
   try { actualizarFilaResultadoEnGrid(claveNorm, window.predioSeleccionado || ficha); } catch (e) {}
 
+  // Si la selección viene del mapa y el predio ya está visible, no recentramos
+  // (evita el "brinco"). Solo se reencuadra si el predio queda fuera de la vista.
+  if (debeHacerZoom && origen === "mapa" && geometriaVisibleEnVista(geomParaZoom)) {
+    debeHacerZoom = false;
+  }
+
+  // Si ya reencuadramos con la geometría del clic, no repetimos el zoom.
+  if (zoomYaAplicado) {
+    debeHacerZoom = false;
+  }
+
   if (debeHacerZoom && geomParaZoom) {
     programarZoomPredioSeleccionado(geomParaZoom, {}, seq);
   }
@@ -3176,6 +3209,33 @@ map.on("click", async function(evt) {
   if (evt.dragging) return;
 
   try {
+    // 1) Selección exacta por coordenada (punto-en-polígono en PostGIS).
+    //    Es la fuente más precisa: evita que el WMS (con tolerancia de píxeles)
+    //    devuelva un predio vecino equivocado.
+    const lonlat = ol.proj.toLonLat(evt.coordinate);
+    const lon = lonlat[0];
+    const lat = lonlat[1];
+
+    try {
+      const res = await fetch(`${API}/predios/intersecta?lon=${lon}&lat=${lat}&_=${Date.now()}`, {
+        cache: "no-store",
+        headers: authHeaders()
+      });
+
+      if (res.ok) {
+        const featureGeojson = await res.json();
+        const clave = extraerClavePredioProps(featureGeojson.properties);
+        if (clave) {
+          // Pasamos la geometría ya obtenida para feedback visual inmediato.
+          await seleccionarPorClave(clave, "mapa", { geojsonPrefetch: featureGeojson });
+          return;
+        }
+      }
+    } catch (eInt) {
+      console.warn("Fallo /predios/intersecta, se intenta WMS:", eInt);
+    }
+
+    // 2) Respaldo: WMS GetFeatureInfo (solo si la consulta exacta no respondió).
     const view = map.getView();
     const resolution = view.getResolution();
     const projection = view.getProjection();
@@ -3208,23 +3268,6 @@ map.on("click", async function(evt) {
         }
       }
     }
-
-    const lonlat = ol.proj.toLonLat(evt.coordinate);
-    const lon = lonlat[0];
-    const lat = lonlat[1];
-
-    const res = await fetch(`${API}/predios/intersecta?lon=${lon}&lat=${lat}&_=${Date.now()}`, {
-      cache: "no-store",
-      headers: authHeaders()
-    });
-
-    if (!res.ok) return;
-
-    const featureGeojson = await res.json();
-    const clave = extraerClavePredioProps(featureGeojson.properties);
-    if (!clave) return;
-
-    await seleccionarPorClave(clave, "mapa");
 
   } catch (err) {
     console.error("Error al seleccionar predio por click:", err);
@@ -5183,50 +5226,46 @@ async function fichaEnriquecidaPadronV28b(p) {
   if (!clave) return base;
 
   let merged = { ...base };
-  let nombreCatalogo = "";
 
-  try {
-    const titular = await titularCatalogoPredio(clave);
-    if (titular) {
-      nombreCatalogo = (titular.nombre_completo || titular.razon_social || "").trim();
-      if (nombreCatalogo) {
-        merged.nombre_completo = nombreCatalogo;
-        merged.propietario = nombreCatalogo;
-      }
-      if (titular.tipo_persona) merged.tipo_persona = titular.tipo_persona;
-      if (titular.rfc) merged.rfc = titular.rfc;
-      if (titular.tipo_titularidad) merged.tipo_titularidad = titular.tipo_titularidad;
-      if (titular.porcentaje_propiedad !== undefined && titular.porcentaje_propiedad !== null) {
-        merged.porcentaje_propiedad = titular.porcentaje_propiedad;
-      }
-      if (titular.id_persona) merged.id_persona = titular.id_persona;
-    }
-  } catch (e) {
-    console.warn('No se pudo enriquecer ficha con catálogo:', e);
+  // Ambas consultas son independientes: se lanzan en paralelo para no encadenar
+  // latencia (antes se hacían en secuencia y eso retrasaba la ficha).
+  const fichaPadronPromise = fetch(`${API}/padron/${encodeURIComponent(clave)}/ficha?_=${Date.now()}`, {
+    cache: 'no-store',
+    headers: authHeaders()
+  })
+    .then(r => (r.ok ? r.json() : null))
+    .catch(e => { console.warn('No se pudo enriquecer ficha con padrón:', e); return null; });
+
+  const [titular, dataPadron] = await Promise.all([
+    titularCatalogoPredio(clave),
+    fichaPadronPromise
+  ]);
+
+  // 1) Datos del padrón (geometría, valores, ubicación, etc.).
+  let nombrePadron = "";
+  if (dataPadron) {
+    const props = dataPadron?.properties || dataPadron || {};
+    merged = { ...merged, ...props };
+    nombrePadron = (props.nombre_completo || props.propietario || "").trim();
   }
 
-  try {
-    const r = await fetch(`${API}/padron/${encodeURIComponent(clave)}/ficha?_=${Date.now()}`, {
-      cache: 'no-store',
-      headers: authHeaders()
-    });
-    if (r.ok) {
-      const data = await r.json();
-      const props = data?.properties || data || {};
-      merged = { ...merged, ...props };
-      if (nombreCatalogo) {
-        merged.nombre_completo = nombreCatalogo;
-        merged.propietario = nombreCatalogo;
-      } else {
-        const nombreTitular = (props.nombre_completo || props.propietario || "").trim();
-        if (nombreTitular) {
-          merged.nombre_completo = nombreTitular;
-          merged.propietario = nombreTitular;
-        }
-      }
+  // 2) Titular del catálogo (prioritario para el nombre visible).
+  let nombreCatalogo = "";
+  if (titular) {
+    nombreCatalogo = (titular.nombre_completo || titular.razon_social || "").trim();
+    if (titular.tipo_persona) merged.tipo_persona = titular.tipo_persona;
+    if (titular.rfc) merged.rfc = titular.rfc;
+    if (titular.tipo_titularidad) merged.tipo_titularidad = titular.tipo_titularidad;
+    if (titular.porcentaje_propiedad !== undefined && titular.porcentaje_propiedad !== null) {
+      merged.porcentaje_propiedad = titular.porcentaje_propiedad;
     }
-  } catch (e) {
-    console.warn('No se pudo enriquecer ficha con padrón:', e);
+    if (titular.id_persona) merged.id_persona = titular.id_persona;
+  }
+
+  const nombreFinal = nombreCatalogo || nombrePadron;
+  if (nombreFinal) {
+    merged.nombre_completo = nombreFinal;
+    merged.propietario = nombreFinal;
   }
 
   return merged;

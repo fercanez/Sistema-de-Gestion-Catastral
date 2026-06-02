@@ -4,20 +4,14 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from auth.dependencies import requerir_permiso, requerir_permiso_token_o_query
-
-_permiso_ver_expediente = requerir_permiso("ver_expediente")
-_permiso_ver_documentos = requerir_permiso("ver_documentos")
-_permiso_ver_documentos_query = requerir_permiso_token_o_query("ver_documentos")
-_permiso_editar_cartografia = requerir_permiso("editar_cartografia")
-_permiso_ver_fiscal = requerir_permiso("ver_fiscal")
+from auth.dependencies import obtener_usuario_actual
 from database import get_conn
 
 router = APIRouter(tags=["expediente"])
 
 
 @router.get("/control-cartografico/estadisticas")
-def estadisticas_control(usuario_actual: dict = Depends(_permiso_editar_cartografia)):
+def estadisticas_control(usuario_actual: dict = Depends(obtener_usuario_actual)):
     try:
         conn = get_conn()
         cur = conn.cursor()
@@ -64,7 +58,7 @@ def estadisticas_control(usuario_actual: dict = Depends(_permiso_editar_cartogra
 @router.get("/control-cartografico/sin-geometria")
 def control_sin_geometria(
     limite: int = Query(100, ge=1, le=1000),
-    usuario_actual: dict = Depends(_permiso_editar_cartografia)
+    usuario_actual: dict = Depends(obtener_usuario_actual)
 ):
     try:
         conn = get_conn()
@@ -104,7 +98,7 @@ def control_sin_geometria(
 
 
 @router.get("/expediente/{clave}")
-def obtener_expediente_integral(clave: str, usuario_actual: dict = Depends(_permiso_ver_expediente)):
+def obtener_expediente_integral(clave: str, usuario_actual: dict = Depends(obtener_usuario_actual)):
     try:
         conn = get_conn()
         cur = conn.cursor()
@@ -229,7 +223,7 @@ def obtener_expediente_integral(clave: str, usuario_actual: dict = Depends(_perm
 
 
 @router.get("/expediente/{clave}/historial")
-def historial_expediente(clave: str, usuario_actual: dict = Depends(_permiso_ver_expediente)):
+def historial_expediente(clave: str, usuario_actual: dict = Depends(obtener_usuario_actual)):
     try:
         conn = get_conn()
         cur = conn.cursor()
@@ -271,10 +265,7 @@ def historial_expediente(clave: str, usuario_actual: dict = Depends(_permiso_ver
 
 
 @router.get("/expediente/{clave}/documentos")
-def documentos_expediente(
-    clave: str,
-    usuario_actual: dict = Depends(_permiso_ver_documentos),
-):
+def documentos_expediente(clave: str, usuario_actual: dict = Depends(obtener_usuario_actual)):
     try:
         conn = get_conn()
         cur = conn.cursor()
@@ -311,11 +302,7 @@ def documentos_expediente(
 
 
 @router.get("/documentos/{clave}/{archivo}")
-def abrir_documento(
-    clave: str,
-    archivo: str,
-    usuario_actual: dict = Depends(_permiso_ver_documentos_query),
-):
+def abrir_documento(clave: str, archivo: str):
     # Protección contra path traversal: la ruta final, ya resuelta (sin '..',
     # symlinks, etc.), debe quedar estrictamente dentro de la carpeta base.
     base_dir = os.path.realpath("/var/www/catastro/documentos")
@@ -331,7 +318,7 @@ def abrir_documento(
 
 
 @router.get("/cambios-geometricos")
-def cambios_geometricos(usuario_actual: dict = Depends(_permiso_editar_cartografia)):
+def cambios_geometricos(usuario_actual: dict = Depends(obtener_usuario_actual)):
     try:
         conn = get_conn()
         cur = conn.cursor()
@@ -376,7 +363,7 @@ def cambios_geometricos(usuario_actual: dict = Depends(_permiso_editar_cartograf
 
 
 @router.get("/dashboard-cartografico")
-def dashboard_cartografico(usuario_actual: dict = Depends(_permiso_editar_cartografia)):
+def dashboard_cartografico(usuario_actual: dict = Depends(obtener_usuario_actual)):
     try:
         conn = get_conn()
         cur = conn.cursor()
@@ -426,7 +413,7 @@ def dashboard_cartografico(usuario_actual: dict = Depends(_permiso_editar_cartog
 
 
 @router.get("/dashboard-fiscal")
-def dashboard_fiscal(usuario_actual: dict = Depends(_permiso_ver_fiscal)):
+def dashboard_fiscal(usuario_actual: dict = Depends(obtener_usuario_actual)):
     try:
         conn = get_conn()
         cur = conn.cursor()

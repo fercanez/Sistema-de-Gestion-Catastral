@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 
-from auth.dependencies import requerir_permiso, requerir_roles
+from auth.acl import normalizar_rol
+from auth.dependencies import obtener_usuario_actual
 from database import get_conn, columnas_tabla, asegurar_tabla_predio_condominio
 from routers.padron import CODIGOS_TENENCIA_PADRON, normalizar_codigo_tenencia
 
@@ -491,16 +492,23 @@ class AplicarMovimientoBody(BaseModel):
     observaciones: Optional[str] = None
 
 
-_permiso_movimientos_lectura = requerir_permiso("consulta")
-_permiso_movimientos_escritura = requerir_permiso("editar_catastro")
-_permiso_movimientos_aplicar = requerir_roles("admin", "supervisor")
-
-
-def permiso_movimientos(usuario_actual: dict = Depends(_permiso_movimientos_escritura)):
+def permiso_movimientos(usuario_actual: dict = Depends(obtener_usuario_actual)):
+    rol = normalizar_rol(usuario_actual.get("rol"))
+    if rol not in ["admin", "supervisor", "catastro"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requiere rol admin, supervisor o catastro para movimientos catastrales",
+        )
     return usuario_actual
 
 
-def permiso_aplicar_movimientos(usuario_actual: dict = Depends(_permiso_movimientos_aplicar)):
+def permiso_aplicar_movimientos(usuario_actual: dict = Depends(obtener_usuario_actual)):
+    rol = normalizar_rol(usuario_actual.get("rol"))
+    if rol not in ["admin", "supervisor"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo admin o supervisor pueden autorizar/aplicar movimientos",
+        )
     return usuario_actual
 
 
@@ -510,7 +518,7 @@ def version_aplicar_movimientos():
 
 
 @router.get("/movimientos/tipos")
-def listar_tipos_movimiento(usuario_actual: dict = Depends(_permiso_movimientos_lectura)):
+def listar_tipos_movimiento(usuario_actual: dict = Depends(permiso_movimientos)):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -527,7 +535,7 @@ def listar_movimientos(
     clave: Optional[str] = Query(None),
     estado: Optional[str] = Query(None),
     limite: int = Query(100, ge=1, le=500),
-    usuario_actual: dict = Depends(_permiso_movimientos_lectura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     sql = """
         SELECT *
@@ -550,7 +558,7 @@ def listar_movimientos(
 
 
 @router.get("/movimientos/{movimiento_id}")
-def obtener_movimiento(movimiento_id: int, usuario_actual: dict = Depends(_permiso_movimientos_lectura)):
+def obtener_movimiento(movimiento_id: int, usuario_actual: dict = Depends(permiso_movimientos)):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -578,7 +586,7 @@ def obtener_movimiento(movimiento_id: int, usuario_actual: dict = Depends(_permi
 def crear_movimiento(
     payload: MovimientoPadronCreate,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_movimientos_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     tipo = (payload.tipo_movimiento or "").strip().upper()
     estado_inicial = "BORRADOR"
@@ -669,7 +677,7 @@ def actualizar_estado_movimiento(
 
 
 @router.get("/movimientos/historial/{clave}")
-def historial_movimientos_clave(clave: str, usuario_actual: dict = Depends(_permiso_movimientos_lectura)):
+def historial_movimientos_clave(clave: str, usuario_actual: dict = Depends(permiso_movimientos)):
     clave_norm = clave.strip().upper()
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -684,7 +692,7 @@ def historial_movimientos_clave(clave: str, usuario_actual: dict = Depends(_perm
 
 
 @router.get("/movimientos/historial/{clave}/numero-oficial")
-def historial_numero_oficial_clave(clave: str, usuario_actual: dict = Depends(_permiso_movimientos_lectura)):
+def historial_numero_oficial_clave(clave: str, usuario_actual: dict = Depends(permiso_movimientos)):
     """Historial de asignaciones/cambios de numero oficial con valores anterior y nuevo."""
     clave_norm = clave.strip().upper()
     with get_conn() as conn:
@@ -720,7 +728,7 @@ def historial_numero_oficial_clave(clave: str, usuario_actual: dict = Depends(_p
 
 
 @router.get("/movimientos/copropietarios/{clave}")
-def listar_copropietarios(clave: str, usuario_actual: dict = Depends(_permiso_movimientos_lectura)):
+def listar_copropietarios(clave: str, usuario_actual: dict = Depends(permiso_movimientos)):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""

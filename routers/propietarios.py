@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 
-from auth.dependencies import requerir_permiso
 from database import get_conn, columnas_tabla, asegurar_tabla_predio_condominio
+from routers.movimientos import permiso_movimientos, permiso_aplicar_movimientos
 from routers.padron import (
     SQL_TIPO_CONDOMINIO,
     _etiqueta_tipo_condominio,
@@ -16,9 +16,6 @@ from routers.padron import (
 )
 
 router = APIRouter(tags=["propietarios"])
-
-_permiso_propietarios_lectura = requerir_permiso("consulta")
-_permiso_propietarios_escritura = requerir_permiso("editar_catastro")
 
 class PropietarioPersonaPayload(BaseModel):
     tipo_persona: str = "FISICA"
@@ -832,7 +829,7 @@ def buscar_propietarios_catalogo(
     nombre: str = Query("", max_length=80),
     razon_social: str = Query("", max_length=150),
     limite: int = Query(200, ge=1, le=500),
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     rs = upper_clean_v28(razon_social) or ""
     filtro_catalogo, params_catalogo = condiciones_busqueda_persona_estructurada_v28(
@@ -921,7 +918,7 @@ def buscar_apellidos_catalogo(
     q: str = Query("", max_length=80),
     tipo: str = Query("paterno"),
     limite: int = Query(25, ge=1, le=100),
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     texto = upper_clean_v28(q) or ""
     like = f"{texto}%"
@@ -958,7 +955,7 @@ def buscar_apellidos_catalogo(
 def buscar_nombres_catalogo(
     q: str = Query("", max_length=80),
     limite: int = Query(30, ge=1, le=100),
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     texto = upper_clean_v28(q) or ""
     like = f"{texto}%"
@@ -993,7 +990,7 @@ def buscar_nombres_catalogo(
 def buscar_razones_sociales_catalogo(
     q: str = Query("", max_length=120),
     limite: int = Query(25, ge=1, le=100),
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     texto = upper_clean_v28(q) or ""
     like = f"{texto}%"
@@ -1019,7 +1016,7 @@ def buscar_calles_catalogo(
     limite: int = Query(30, ge=1, le=100),
     exacta: bool = Query(False),
     incluir_padron: bool = Query(True),
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     """Busca calles en cat_calles; opcionalmente sugiere calles del padrón fiscal."""
     texto = upper_clean_v28(q) or ""
@@ -1074,7 +1071,7 @@ def buscar_calles_catalogo(
 def crear_calle_catalogo(
     payload: CalleCatalogoPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     """Alta de calle en catalogos.cat_calles."""
     nombre = upper_clean_v28(payload.nombre_calle)
@@ -1142,7 +1139,7 @@ def crear_calle_catalogo(
 def buscar_propietarios_mantenimiento(
     q: str = Query("", max_length=150),
     limite: int = Query(150, ge=1, le=500),
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     """Búsqueda para mantenimiento de propietarios con domicilio fiscal del padrón."""
     texto = upper_clean_v28(q) or ""
@@ -1318,7 +1315,7 @@ def buscar_propietarios_mantenimiento(
 def fusionar_propietarios_catalogo(
     payload: FusionarPropietariosPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     destino = int(payload.id_persona_destino)
     origenes = sorted({
@@ -1491,7 +1488,7 @@ def fusionar_propietarios_catalogo(
 @router.get("/propietarios/{id_persona}")
 def obtener_propietario_catalogo(
     id_persona: int,
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -1512,7 +1509,7 @@ def obtener_propietario_catalogo(
 def crear_propietario_catalogo(
     payload: PropietarioPersonaPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     tipo = upper_clean_v28(payload.tipo_persona) or "FISICA"
     if tipo not in ["FISICA", "MORAL"]:
@@ -1572,7 +1569,7 @@ def actualizar_propietario_catalogo(
     id_persona: int,
     payload: PropietarioPersonaPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     tipo = upper_clean_v28(payload.tipo_persona) or "FISICA"
     if tipo not in ["FISICA", "MORAL"]:
@@ -1634,7 +1631,7 @@ def actualizar_propietario_catalogo(
 def eliminar_propietario_catalogo(
     id_persona: int,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     """Baja lógica del propietario en catálogo y cierra relaciones vigentes con predios."""
     with get_conn() as conn:
@@ -1686,7 +1683,7 @@ def eliminar_propietario_catalogo(
 @router.get("/predios/{clave}/propietarios")
 def listar_propietarios_predio_v28(
     clave: str,
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -1741,7 +1738,7 @@ def listar_propietarios_predio_v28(
 def refrescar_nombre_padron_desde_catalogo_v28(
     clave: str,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     """Copia el titular vigente del catálogo al campo padron.nombre_completo."""
     with get_conn() as conn:
@@ -1792,7 +1789,7 @@ def resumen_desfase_padron_catalogo(
     texto_padron: str = Query("", max_length=80),
     limite: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     """Predios cuyo nombre en padrón difiere del titular vigente en catálogo."""
     filtro = ""
@@ -1850,7 +1847,7 @@ def resumen_desfase_padron_catalogo(
 def sincronizar_padron_catalogo_masivo_v28(
     payload: SincronizarPadronMasivoPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     """Copia el titular del catálogo al padrón en todos los predios con desfase."""
     if not payload.confirmar:
@@ -1905,7 +1902,7 @@ def sincronizar_padron_catalogo_masivo_v28(
 @router.get("/predios/{clave}/condominio")
 def obtener_condominio_predio_v28(
     clave: str,
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -1918,7 +1915,7 @@ def actualizar_tenencia_predio_v28(
     clave: str,
     payload: TenenciaPadronPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura),
+    usuario_actual: dict = Depends(permiso_movimientos),
 ):
     """Asigna o cambia el tipo de tenencia (campo padron.condominio)."""
     if not payload.confirmar:
@@ -1951,7 +1948,7 @@ def guardar_condominio_predio_v28(
     clave: str,
     payload: PredioCondominioPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     clave_norm = upper_clean_v28(clave) or ""
 
@@ -2061,7 +2058,7 @@ def _fila_predio_clasificacion_condominio(row: dict) -> dict:
 def listar_nombres_condominio_v28(
     q: str = Query("", max_length=150),
     limite: int = Query(50, ge=1, le=200),
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -2097,7 +2094,7 @@ def listar_nombres_condominio_v28(
 @router.post("/condominios/clasificacion/buscar")
 def buscar_clasificacion_condominio_v28(
     payload: CondominioClasificacionBuscarPayload,
-    usuario_actual: dict = Depends(_permiso_propietarios_lectura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     claves = parse_lista_claves_condominio_v28(payload.claves_texto, payload.claves)
     limite = min(max(payload.limite or 500, 1), 5000)
@@ -2218,7 +2215,7 @@ def buscar_clasificacion_condominio_v28(
 def clasificacion_masiva_condominio_v28(
     payload: CondominioClasificacionMasivaPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     claves = parse_lista_claves_condominio_v28(claves=payload.claves)
     if not claves:
@@ -2296,7 +2293,7 @@ def agregar_propietario_predio_v28(
     clave: str,
     payload: PredioPropietarioPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     porcentaje = validar_porcentaje_v28(payload.porcentaje_propiedad)
     tipo_titularidad = upper_clean_v28(payload.tipo_titularidad) or "PROPIETARIO"
@@ -2377,7 +2374,7 @@ def actualizar_propietario_predio_v28(
     id_persona: int,
     payload: PredioPropietarioUpdatePayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     porcentaje = validar_porcentaje_v28(payload.porcentaje_propiedad)
     tipo_titularidad = upper_clean_v28(payload.tipo_titularidad) or "PROPIETARIO"
@@ -2427,7 +2424,7 @@ def quitar_propietario_predio_v28(
     clave: str,
     id_persona: int,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -2467,7 +2464,7 @@ def sincronizar_titular_padron_v28(
     clave: str,
     reemplazar: bool = Query(False),
     request: Request = None,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -2561,7 +2558,7 @@ def reemplazar_propietarios_predio_v28(
     clave: str,
     payload: PredioPropietariosReemplazoPayload,
     request: Request,
-    usuario_actual: dict = Depends(_permiso_propietarios_escritura)
+    usuario_actual: dict = Depends(permiso_movimientos)
 ):
     propietarios = payload.propietarios or []
     if not propietarios:
