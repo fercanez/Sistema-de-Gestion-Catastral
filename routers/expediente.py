@@ -157,46 +157,8 @@ def obtener_expediente_integral(clave: str, usuario_actual: dict = Depends(obten
                     ELSE ST_AsGeoJSON(ST_Transform(vei.geom, 4326))::json
                 END AS geometry
             FROM catastro.v_expediente_integral vei
-            LEFT JOIN LATERAL (
-                SELECT
-                    pp.id_persona,
-                    per.tipo_persona,
-                    per.rfc,
-                    pp.porcentaje_propiedad,
-                    pp.tipo_titularidad,
-                    CASE
-                        WHEN UPPER(COALESCE(per.tipo_persona, 'FISICA')) = 'MORAL' THEN
-                            UPPER(TRIM(COALESCE(per.razon_social, '')))
-                        ELSE
-                            UPPER(TRIM(
-                                COALESCE(per.apellido_paterno, '') || ' ' ||
-                                COALESCE(per.apellido_materno, '') || ' ' ||
-                                COALESCE(per.nombre, '')
-                            ))
-                    END AS nombre_visible,
-                    CASE
-                        WHEN UPPER(COALESCE(per.tipo_persona, 'FISICA')) = 'MORAL' THEN
-                            UPPER(TRIM(COALESCE(per.razon_social, '')))
-                        ELSE
-                            UPPER(TRIM(
-                                COALESCE(per.apellido_paterno, '') || ' ' ||
-                                COALESCE(per.apellido_materno, '') || ' ' ||
-                                COALESCE(per.nombre, '')
-                            ))
-                    END AS titular_principal,
-                    1::int AS total_titulares,
-                    pp.porcentaje_propiedad AS suma_porcentaje
-                FROM catastro.predio_propietario pp
-                INNER JOIN catalogos.personas per ON per.id_persona = pp.id_persona
-                WHERE UPPER(TRIM(pp.clave_catastral)) = UPPER(TRIM(vei.clave_catastral))
-                  AND pp.vigente = TRUE
-                  AND COALESCE(per.activo, TRUE) = TRUE
-                ORDER BY
-                    CASE WHEN pp.tipo_titularidad = 'PROPIETARIO' THEN 1 ELSE 2 END,
-                    pp.porcentaje_propiedad DESC NULLS LAST,
-                    pp.id_predio_propietario
-                LIMIT 1
-            ) tit ON TRUE
+            LEFT JOIN catastro.v_titularidad_predio tit
+                ON UPPER(TRIM(tit.clave_catastral)) = UPPER(TRIM(vei.clave_catastral))
             WHERE UPPER(TRIM(vei.clave_catastral)) = UPPER(TRIM(%s))
             LIMIT 1;
         """, (clave,))

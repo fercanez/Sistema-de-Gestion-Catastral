@@ -2553,6 +2553,142 @@ def sincronizar_titular_padron_v28(
             }
 
 
+@router.post("/predios/propietarios/sincronizar-padron-masivo")
+def sincronizar_titular_padron_masivo_v28(
+    confirmar: bool = Query(False),
+    limite: int = Query(20000, ge=1, le=200000),
+    request: Request = None,
+    usuario_actual: dict = Depends(permiso_movimientos)
+):
+    """Aplica de una sola vez el titular del padrón a TODOS los predios que tienen
+    nombre en el padrón fiscal pero AÚN no tienen propietario vigente en el catálogo.
+
+    - confirmar=false  -> vista previa (cuántos predios y una muestra).
+    - confirmar=true   -> los crea/asigna al 100% como PROPIETARIO.
+
+    Es idempotente: solo toca predios SIN titular vigente, así que puede ejecutarse
+    varias veces (procesa hasta `limite` predios por llamada para no saturar)."""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Total real de predios pendientes (con titular en padrón y sin propietario en catálogo).
+            cur.execute("""
+                SELECT COUNT(*)::int AS total
+                FROM catalogos.padron_2026 p
+                WHERE NULLIF(TRIM(p.nombre_completo), '') IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM catastro.predio_propietario pp
+                      WHERE UPPER(TRIM(pp.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
+                        AND pp.vigente = TRUE
+                  );
+            """)
+            total_pendientes = int((cur.fetchone() or {}).get("total") or 0)
+
+            if total_pendientes <= 0:
+                return {
+                    "ok": True,
+                    "preview": not confirmar,
+                    "pendientes": 0,
+                    "aplicados": 0,
+                    "mensaje": "No hay predios pendientes: todos los predios con titular en el padrón ya tienen propietario en el catálogo."
+                }
+
+            if not confirmar:
+                cur.execute("""
+                    SELECT UPPER(TRIM(p.clave_catastral)) AS clave_catastral,
+                           UPPER(TRIM(p.nombre_completo)) AS titular_padron
+                    FROM catalogos.padron_2026 p
+                    WHERE NULLIF(TRIM(p.nombre_completo), '') IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1 FROM catastro.predio_propietario pp
+                          WHERE UPPER(TRIM(pp.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
+                            AND pp.vigente = TRUE
+                      )
+                    ORDER BY p.clave_catastral
+                    LIMIT 12;
+                """)
+                muestra = [dict(r) for r in cur.fetchall()]
+                return {
+                    "ok": True,
+                    "preview": True,
+                    "pendientes": total_pendientes,
+                    "procesara": min(total_pendientes, limite),
+                    "limite": limite,
+                    "muestra": muestra,
+                    "mensaje": (
+                        f"{total_pendientes} predio(s) tienen titular en el padrón sin propietario en el catálogo. "
+                        f"Se procesarán hasta {min(total_pendientes, limite)} en esta ejecución."
+                    )
+                }
+
+            # Lote a procesar en esta llamada.
+            cur.execute("""
+                SELECT UPPER(TRIM(p.clave_catastral)) AS clave,
+                       UPPER(TRIM(p.nombre_completo)) AS nombre
+                FROM catalogos.padron_2026 p
+                WHERE NULLIF(TRIM(p.nombre_completo), '') IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM catastro.predio_propietario pp
+                      WHERE UPPER(TRIM(pp.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
+                        AND pp.vigente = TRUE
+                  )
+                ORDER BY p.clave_catastral
+                LIMIT %s;
+            """, (limite,))
+            lote = cur.fetchall()
+
+            # Agrupar por nombre para crear/localizar la persona UNA sola vez.
+            claves_por_nombre = {}
+            for r in lote:
+                nombre = (r.get("nombre") or "").strip()
+                clave = (r.get("clave") or "").strip()
+                if nombre and clave:
+                    claves_por_nombre.setdefault(nombre, []).append(clave)
+
+            aplicados = 0
+            personas = 0
+            sin_resolver = 0
+            for nombre, claves in claves_por_nombre.items():
+                id_persona = resolver_persona_por_nombre_padron_v28(cur, nombre)
+                if not id_persona:
+                    sin_resolver += len(claves)
+                    continue
+                personas += 1
+                # Inserción masiva de todas las claves de este titular en un solo statement.
+                cur.execute("""
+                    INSERT INTO catastro.predio_propietario (
+                        clave_catastral, id_persona, porcentaje_propiedad,
+                        tipo_titularidad, vigente, fecha_inicio
+                    )
+                    SELECT UNNEST(%s::text[]), %s, 100, 'PROPIETARIO', TRUE, CURRENT_DATE;
+                """, (claves, id_persona))
+                aplicados += cur.rowcount or 0
+
+            registrar_auditoria_simple_v28(
+                cur,
+                usuario_actual.get("usuario"),
+                "SINCRONIZAR_TITULAR_PADRON_MASIVO",
+                "PROPIETARIOS",
+                f"Titular del padrón aplicado masivamente: aplicados={aplicados} personas={personas} sin_resolver={sin_resolver}",
+                request.client.host if request and request.client else None
+            )
+            conn.commit()
+
+            restantes = max(total_pendientes - aplicados, 0)
+            return {
+                "ok": True,
+                "preview": False,
+                "aplicados": aplicados,
+                "personas": personas,
+                "sin_resolver": sin_resolver,
+                "pendientes_antes": total_pendientes,
+                "restantes": restantes,
+                "mensaje": (
+                    f"Se aplicó el titular del padrón a {aplicados} predio(s)."
+                    + (f" Quedan {restantes} pendientes; vuelve a ejecutar para continuar." if restantes > 0 else " No quedan predios pendientes.")
+                )
+            }
+
+
 @router.post("/predios/{clave}/propietarios/reemplazar")
 def reemplazar_propietarios_predio_v28(
     clave: str,

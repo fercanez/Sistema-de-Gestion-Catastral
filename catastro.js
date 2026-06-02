@@ -4238,10 +4238,126 @@ function renderPadronInfoCoprop(data = null) {
     <div class="coprop-padron-alerta">
       <div><b>Titular en padrón:</b> ${escapeHtml(titular)}</div>
       <small>${vacio ? "Aún no está registrado en catastro para este predio." : "Difiere de los titulares registrados a la izquierda."}</small>
-      <button type="button" class="coprop-btn ok" style="margin-top:6px;font-size:11px;padding:4px 8px;" onclick="sincronizarTitularDesdePadron()">Aplicar titular del padrón</button>
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+        <button type="button" class="coprop-btn ok" style="font-size:11px;padding:4px 8px;" onclick="sincronizarTitularDesdePadron()">Aplicar a este predio</button>
+        <button type="button" class="coprop-btn sec" style="font-size:11px;padding:4px 8px;" onclick="aplicarTitularPadronMasivo()" title="Asigna el titular del padrón a todos los predios que aún no tienen propietario en el catálogo">Aplicar a TODOS los pendientes…</button>
+      </div>
     </div>
   `;
 }
+
+// Confirmación propia (no usa window.confirm, que Chrome bloquea cuando se invoca
+// después de un await). Devuelve Promise<boolean> resuelta por el clic del usuario.
+function mostrarConfirmacionAsync(titulo, mensajeHtml, opciones = {}) {
+  const textoOk = opciones.textoOk || "Continuar";
+  const textoCancel = opciones.textoCancel || "Cancelar";
+  const soloInfo = !!opciones.soloInfo;
+  return new Promise((resolve) => {
+    const previo = document.getElementById("confirmAsyncOverlay");
+    if (previo) previo.remove();
+    const overlay = document.createElement("div");
+    overlay.id = "confirmAsyncOverlay";
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100000;display:flex;align-items:center;justify-content:center;";
+    overlay.innerHTML = `
+      <div style="background:#fff;max-width:540px;width:92%;border-radius:8px;box-shadow:0 12px 48px rgba(0,0,0,.35);overflow:hidden;">
+        <div style="background:#7a1f2b;color:#fff;padding:10px 14px;font-weight:bold;font-size:14px;">${escapeHtml(titulo)}</div>
+        <div style="padding:14px;max-height:55vh;overflow:auto;font-size:13px;color:#222;line-height:1.45;">${mensajeHtml}</div>
+        <div style="padding:10px 14px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #eee;">
+          ${soloInfo ? "" : `<button type="button" id="confirmAsyncCancel" class="coprop-btn sec">${escapeHtml(textoCancel)}</button>`}
+          <button type="button" id="confirmAsyncOk" class="coprop-btn ok">${escapeHtml(soloInfo ? "Aceptar" : textoOk)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const cerrar = (val) => { overlay.remove(); resolve(val); };
+    overlay.querySelector("#confirmAsyncOk").onclick = () => cerrar(true);
+    const btnCancel = overlay.querySelector("#confirmAsyncCancel");
+    if (btnCancel) btnCancel.onclick = () => cerrar(false);
+    overlay.onclick = (e) => { if (e.target === overlay) cerrar(soloInfo ? true : false); };
+  });
+}
+window.mostrarConfirmacionAsync = mostrarConfirmacionAsync;
+
+async function aplicarTitularPadronMasivo() {
+  if (!puedeEditarCatastro()) {
+    await mostrarConfirmacionAsync("Sin permiso", "Su rol no tiene permiso para administrar titularidad.", { soloInfo: true });
+    return;
+  }
+
+  try {
+    // 1) Vista previa: cuántos predios se verían afectados.
+    const rPrev = await fetch(`${API}/predios/propietarios/sincronizar-padron-masivo?confirmar=false&_=${Date.now()}`, {
+      method: "POST",
+      headers: authHeaders()
+    });
+    const prev = await rPrev.json().catch(() => ({}));
+    if (!rPrev.ok) throw new Error(extraerMensajeApi(prev, "No se pudo obtener la vista previa."));
+
+    const pendientes = Number(prev.pendientes || 0);
+    if (!pendientes) {
+      await mostrarConfirmacionAsync(
+        "Sin pendientes",
+        escapeHtml(prev.mensaje || "No hay predios pendientes: todos los predios con titular en el padrón ya tienen propietario en el catálogo."),
+        { soloInfo: true }
+      );
+      return;
+    }
+
+    const muestra = (prev.muestra || [])
+      .slice(0, 8)
+      .map(m => `${escapeHtml(m.clave_catastral)} — ${escapeHtml(m.titular_padron)}`)
+      .join("<br>");
+    const procesara = Number(prev.procesara || pendientes);
+    const msgHtml = [
+      `Se asignará como titular (<b>propietario al 100%</b>) el nombre del padrón a <b>${formatoNumeroEntero(pendientes)}</b> predio(s) que aún <b>NO</b> tienen propietario en el catálogo.`,
+      procesara < pendientes ? `<br><br>En esta ejecución se procesarán <b>${formatoNumeroEntero(procesara)}</b>; podrás repetir para continuar.` : "",
+      muestra ? `<br><br><b>Ejemplos:</b><br>${muestra}` : "",
+      `<br><br>Esta acción crea propietarios en el catálogo. ¿Desea continuar?`
+    ].filter(Boolean).join("");
+
+    const confirmado = await mostrarConfirmacionAsync("Aplicar titular del padrón a todos", msgHtml, {
+      textoOk: "Sí, aplicar a todos",
+      textoCancel: "Cancelar"
+    });
+    if (!confirmado) return;
+
+    // 2) Aplicar (puede requerir varias pasadas si hay más que el límite por lote).
+    let aplicadosTotal = 0;
+    let restantes = pendientes;
+    let pasadas = 0;
+    const MAX_PASADAS = 50;
+
+    while (restantes > 0 && pasadas < MAX_PASADAS) {
+      pasadas++;
+      const r = await fetch(`${API}/predios/propietarios/sincronizar-padron-masivo?confirmar=true&_=${Date.now()}`, {
+        method: "POST",
+        headers: authHeaders()
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(extraerMensajeApi(data, "No se pudo aplicar el titular del padrón."));
+
+      aplicadosTotal += Number(data.aplicados || 0);
+      restantes = Number(data.restantes || 0);
+
+      // Si un lote no aplicó nada, se corta para no entrar en bucle infinito.
+      if (Number(data.aplicados || 0) === 0) break;
+    }
+
+    await mostrarConfirmacionAsync(
+      "Proceso terminado",
+      `Se aplicó el titular del padrón a <b>${formatoNumeroEntero(aplicadosTotal)}</b> predio(s).` +
+      (restantes > 0 ? `<br><br>Quedan <b>${formatoNumeroEntero(restantes)}</b> pendientes (pueden requerir revisión manual).` : ""),
+      { soloInfo: true }
+    );
+
+    if (copropEstado.clave) {
+      await cargarCopropietariosPredio(copropEstado.clave);
+      await refrescarVistaPredioActivo(copropEstado.clave);
+    }
+  } catch (e) {
+    await mostrarConfirmacionAsync("Error", escapeHtml(e.message || "Error al aplicar el titular del padrón de forma masiva."), { soloInfo: true });
+  }
+}
+window.aplicarTitularPadronMasivo = aplicarTitularPadronMasivo;
 
 async function sincronizarTitularDesdePadron(reemplazar = false) {
   const clave = copropEstado.clave;
@@ -4642,14 +4758,8 @@ async function cargarCopropietariosPredio(clave = copropEstado.clave) {
     renderCondominioInfoCoprop(data);
     renderPadronInfoCoprop(data);
 
-    if (data.titular_padron && !(data.propietarios || []).length) {
-      setTimeout(() => {
-        if (confirm(`El padrón registra como titular:\n\n${data.titular_padron}\n\n¿Desea aplicarlo a este predio?`)) {
-          sincronizarTitularDesdePadron(false);
-        }
-      }, 150);
-    }
-
+    // Antes se preguntaba con un confirm() predio por predio (molesto). Ahora solo se
+    // muestra la alerta con los botones (aplicar a este predio o a todos los pendientes).
     return data;
   } catch (e) {
     if (cont) cont.innerHTML = `<div class="coprop-msg error">${escapeHtml(e.message)}</div>`;

@@ -13,45 +13,16 @@ from database import get_conn, asegurar_tabla_predio_condominio
 
 router = APIRouter(tags=["padron"])
 
-# Misma lógica de nombre que copropietarios / propietarios.py (evita desfase con v_titularidad_predio).
-SQL_NOMBRE_PERSONA_TITULAR = """
-    CASE
-        WHEN UPPER(COALESCE(per.tipo_persona, 'FISICA')) = 'MORAL' THEN
-            UPPER(TRIM(COALESCE(per.razon_social, '')))
-        ELSE
-            UPPER(TRIM(
-                COALESCE(per.apellido_paterno, '') || ' ' ||
-                COALESCE(per.apellido_materno, '') || ' ' ||
-                COALESCE(per.nombre, '')
-            ))
-    END
-"""
-
 # Una fila por predio: padron_2026 + titular principal vigente del catálogo.
-SQL_FROM_PADRON_UNICO = f"""
+#
+# IMPORTANTE: se usa la vista catastro.v_titularidad_predio (vista normal, en vivo:
+# refleja cambios del catálogo al instante). NO usar un LATERAL correlacionado aquí,
+# porque al filtrar/contar sobre los ~441k predios se evalúa por fila y la búsqueda
+# por nombre/colonia se vuelve lentísima o expira (timeout) -> el frontend recibe 0.
+SQL_FROM_PADRON_UNICO = """
     FROM catalogos.padron_2026 p
-    LEFT JOIN LATERAL (
-        SELECT
-            pp.id_persona,
-            per.tipo_persona,
-            per.rfc,
-            pp.porcentaje_propiedad,
-            pp.tipo_titularidad,
-            {SQL_NOMBRE_PERSONA_TITULAR} AS nombre_visible,
-            {SQL_NOMBRE_PERSONA_TITULAR} AS titular_principal,
-            1::int AS total_titulares,
-            pp.porcentaje_propiedad AS suma_porcentaje
-        FROM catastro.predio_propietario pp
-        INNER JOIN catalogos.personas per ON per.id_persona = pp.id_persona
-        WHERE UPPER(TRIM(pp.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
-          AND pp.vigente = TRUE
-          AND COALESCE(per.activo, TRUE) = TRUE
-        ORDER BY
-            CASE WHEN pp.tipo_titularidad = 'PROPIETARIO' THEN 1 ELSE 2 END,
-            pp.porcentaje_propiedad DESC NULLS LAST,
-            pp.id_predio_propietario
-        LIMIT 1
-    ) tit ON TRUE
+    LEFT JOIN catastro.v_titularidad_predio tit
+        ON UPPER(TRIM(tit.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
     LEFT JOIN catastro.predios g
         ON UPPER(TRIM(g.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
 """

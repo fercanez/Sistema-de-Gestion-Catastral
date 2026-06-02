@@ -38,8 +38,8 @@ def startup_migraciones():
         with get_conn() as conn:
             with conn.cursor() as cur:
                 asegurar_tabla_predio_condominio(cur, conn)
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 
 @app.get("/")
@@ -53,6 +53,7 @@ def root():
         "propietarios_sync_padron": True,
         "titular_directo_padron": True,
         "padron_sync_masivo": True,
+        "titular_padron_masivo": True,
         "propietarios_delete": True,
         "propietarios_domicilio": True,
         "catalogo_calles": True,
