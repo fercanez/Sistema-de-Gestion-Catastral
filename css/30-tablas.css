@@ -1,0 +1,890 @@
+﻿/* ============================================================
+   v22 PANEL FIX DEFINITIVO
+   Fuerza Consulta / Capas / Herramientas / Administración
+   dentro del panel lateral, no a pantalla completa.
+============================================================ */
+
+html,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+  background: #eef2f6 !important;
+}
+
+#map {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 1 !important;
+}
+
+.panel-modern,
+#panel {
+  position: absolute !important;
+  top: 14px !important;
+  left: 14px !important;
+  width: 365px !important;
+  max-width: 365px !important;
+  height: calc(100vh - 28px) !important;
+  max-height: calc(100vh - 28px) !important;
+  z-index: 1200 !important;
+  background: rgba(255,255,255,.96) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 16px 38px rgba(15,23,42,.28) !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  border: 1px solid rgba(226,232,240,.95) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.panel-header {
+  flex: 0 0 auto !important;
+  background: #8a3f53 !important;
+  color: white !important;
+  padding: 16px 18px !important;
+  border-radius: 16px 16px 0 0 !important;
+  position: relative !important;
+}
+
+.panel-title {
+  font-size: 18px !important;
+  font-weight: 900 !important;
+  line-height: 1.1 !important;
+}
+
+.panel-subtitle {
+  font-size: 11px !important;
+  opacity: .95 !important;
+  margin-top: 4px !important;
+}
+
+.tabs {
+  flex: 0 0 auto !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, 1fr) !important;
+  background: #f8fafc !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.tab-btn {
+  min-width: 0 !important;
+  height: 54px !important;
+  padding: 6px 2px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #475569 !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  white-space: normal !important;
+  line-height: 1.15 !important;
+}
+
+.tab-btn.active {
+  color: #703341 !important;
+  background: #ffffff !important;
+  border-bottom: 3px solid #703341 !important;
+}
+
+.tab-content {
+  display: none !important;
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 12px 12px 18px !important;
+  background: #f8fafc !important;
+  min-height: 0 !important;
+}
+
+.tab-content.active {
+  display: block !important;
+}
+
+.card-panel {
+  width: auto !important;
+  max-width: 100% !important;
+  margin: 0 0 12px 0 !important;
+  padding: 13px !important;
+  background: rgba(255,255,255,.98) !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 13px !important;
+  box-shadow: 0 4px 13px rgba(15,23,42,.08) !important;
+  box-sizing: border-box !important;
+}
+
+.section-label {
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  color: #703341 !important;
+  text-transform: uppercase !important;
+  letter-spacing: .7px !important;
+  margin-bottom: 10px !important;
+}
+
+.card-panel input,
+.card-panel select {
+  width: 100% !important;
+  height: 36px !important;
+  margin-bottom: 8px !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 9px !important;
+  padding: 0 10px !important;
+  font-size: 13px !important;
+  box-sizing: border-box !important;
+  background: #fff !important;
+}
+
+.card-panel button {
+  width: 100% !important;
+  min-height: 36px !important;
+  border: 0 !important;
+  border-radius: 9px !important;
+  background: #7a3144 !important;
+  color: #fff !important;
+  font-weight: 900 !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+  margin: 3px 0 !important;
+}
+
+#resultadosBusqueda {
+  max-height: 250px !important;
+  overflow-y: auto !important;
+  padding-right: 2px !important;
+}
+
+.resultado-item {
+  background: #fff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-left: 4px solid #703341 !important;
+  border-radius: 10px !important;
+  padding: 8px !important;
+  margin-bottom: 7px !important;
+  cursor: pointer !important;
+  font-size: 12px !important;
+}
+
+#ficha {
+  max-height: 330px !important;
+  overflow-y: auto !important;
+}
+
+/* Capas compactas */
+.layer-item {
+  padding: 9px !important;
+  margin-bottom: 8px !important;
+  border-radius: 11px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.layer-top {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.layer-name {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 12px !important;
+}
+
+.layer-percent {
+  font-size: 11px !important;
+  color: #64748b !important;
+}
+
+.layer-actions {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 6px !important;
+  margin-top: 6px !important;
+}
+
+.layer-actions button {
+  min-height: 28px !important;
+  font-size: 11px !important;
+  background: #fff !important;
+  color: #703341 !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+/* Administración compacta dentro del panel */
+#tabAdministracion {
+  max-height: none !important;
+  overflow-y: auto !important;
+}
+
+#tabAdministracion .admin-card,
+#tabAdministracion .card-panel {
+  margin-bottom: 10px !important;
+  padding: 11px !important;
+}
+
+.admin-kpi-row {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 6px !important;
+}
+
+.admin-kpi {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  padding: 7px 5px !important;
+  text-align: center !important;
+}
+
+.admin-kpi span {
+  display: block !important;
+  color: #64748b !important;
+  font-size: 8px !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+}
+
+.admin-kpi b {
+  display: block !important;
+  color: #703341 !important;
+  font-size: 14px !important;
+}
+
+.admin-form {
+  display: grid !important;
+  gap: 6px !important;
+}
+
+.admin-toolbar {
+  display: grid !important;
+  grid-template-columns: 1fr 42px !important;
+  gap: 6px !important;
+  align-items: center !important;
+  margin-bottom: 7px !important;
+}
+
+.admin-toolbar.only-btn {
+  display: block !important;
+}
+
+.admin-toolbar-mov-acciones {
+  display: flex !important;
+  gap: 8px !important;
+  align-items: center !important;
+}
+
+.admin-toolbar-mov-acciones .btn-gestor-mov {
+  flex: 1 1 auto;
+}
+
+.admin-table-wrap {
+  max-height: 235px !important;
+  overflow-y: auto !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 11px !important;
+  background: #fff !important;
+}
+
+.admin-user-row,
+.admin-audit-row {
+  display: grid !important;
+  grid-template-columns: 1fr auto !important;
+  gap: 7px !important;
+  padding: 8px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.admin-user-main b,
+.admin-audit-row b {
+  display: block !important;
+  color: #111827 !important;
+  font-size: 11px !important;
+}
+
+.admin-user-main small,
+.admin-audit-row small {
+  display: block !important;
+  color: #334155 !important;
+  font-size: 9.5px !important;
+}
+
+.admin-user-main span,
+.admin-audit-row span {
+  display: block !important;
+  color: #64748b !important;
+  font-size: 9px !important;
+}
+
+.admin-user-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 3px !important;
+  justify-content: flex-end !important;
+  max-width: 110px !important;
+}
+
+.admin-user-actions button {
+  width: auto !important;
+  min-height: 24px !important;
+  padding: 3px 6px !important;
+  font-size: 10px !important;
+  margin: 0 !important;
+}
+
+.badge-admin-activo,
+.badge-admin-inactivo {
+  display: inline-block !important;
+  padding: 3px 6px !important;
+  border-radius: 999px !important;
+  font-size: 8.5px !important;
+  font-weight: 900 !important;
+}
+
+.badge-admin-activo {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+}
+
+.badge-admin-inactivo {
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+}
+
+.admin-mensaje,
+.admin-loading,
+.admin-error {
+  margin-top: 6px !important;
+  padding: 7px !important;
+  border-radius: 9px !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+}
+
+.admin-mensaje {
+  display: none !important;
+}
+
+.admin-mensaje.ok {
+  display: block !important;
+  background: #ecfdf3 !important;
+  color: #166534 !important;
+  border: 1px solid #bbf7d0 !important;
+}
+
+.admin-mensaje.error,
+.admin-error {
+  display: block !important;
+  background: #fff1f2 !important;
+  color: #991b1b !important;
+  border: 1px solid #fecdd3 !important;
+}
+
+/* Botón mostrar panel */
+.btn-mostrar-panel {
+  position: absolute !important;
+  top: 18px !important;
+  left: 18px !important;
+  z-index: 1300 !important;
+  background: #703341 !important;
+  color: #fff !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  padding: 10px 13px !important;
+  font-weight: 900 !important;
+  box-shadow: 0 10px 24px rgba(15,23,42,.22) !important;
+}
+
+.panel-oculto {
+  transform: translateX(-390px) !important;
+  transition: transform .25s ease !important;
+}
+
+@media (max-width: 780px) {
+  .panel-modern,
+  #panel {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    left: 10px !important;
+    top: 10px !important;
+    height: calc(100vh - 20px) !important;
+  }
+}
+
+
+/* ============================================================
+   v22 ADMIN VISIBLE FIX
+============================================================ */
+#tabAdministracion.active {
+  display: block !important;
+}
+
+#tabAdministracion .card-panel,
+#tabAdministracion .admin-card {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.tabs {
+  grid-template-columns: repeat(4, 1fr) !important;
+}
+
+.tab-btn.solo-admin {
+  font-size: 10.5px !important;
+}
+
+#tabAdministracion {
+  padding-top: 12px !important;
+}
+
+
+/* ============================================================
+   v22 TABS FIX 2
+============================================================ */
+#panel,
+.panel-modern {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+#panel .tabs,
+.panel-modern .tabs {
+  flex: 0 0 auto !important;
+}
+
+#panel .tab-content,
+.panel-modern .tab-content {
+  display: none !important;
+  flex: 1 1 auto !important;
+  width: auto !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  max-height: calc(100vh - 150px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 12px !important;
+  background: #f8fafc !important;
+  box-sizing: border-box !important;
+}
+
+#panel .tab-content.active,
+.panel-modern .tab-content.active {
+  display: block !important;
+}
+
+#tabConsulta.active .card-panel,
+#tabCapas.active .card-panel,
+#tabHerramientas.active .card-panel,
+#tabAdministracion.active .card-panel {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+#tabHerramientas,
+#tabAdministracion {
+  background: #f8fafc !important;
+}
+
+#tabHerramientas .card-panel,
+#tabAdministracion .card-panel {
+  margin-bottom: 12px !important;
+}
+
+
+/* ============================================================
+   v22 PANEL CIERRE FIX
+   Corrige panel en blanco por cierre extra de HTML y fuerza tabs visibles.
+============================================================ */
+#panel.panel-modern {
+  position: absolute !important;
+  top: 14px !important;
+  left: 14px !important;
+  width: 365px !important;
+  max-width: 365px !important;
+  height: calc(100vh - 28px) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  z-index: 1200 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+#panel .panel-header,
+#panel .tabs {
+  flex: 0 0 auto !important;
+}
+
+#panel .tabs {
+  display: grid !important;
+  grid-template-columns: repeat(4, 1fr) !important;
+}
+
+#panel .tab-btn {
+  height: 50px !important;
+  min-height: 50px !important;
+  padding: 4px 1px !important;
+  font-size: 10px !important;
+  line-height: 1.05 !important;
+  overflow: hidden !important;
+}
+
+#panel .tab-content {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 12px !important;
+  background: #f8fafc !important;
+  box-sizing: border-box !important;
+}
+
+#panel .tab-content:not(.active) {
+  display: none !important;
+}
+
+#panel .tab-content.active {
+  display: block !important;
+}
+
+#tabConsulta.active,
+#tabCapas.active,
+#tabHerramientas.active,
+#tabAdministracion.active {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+#tabConsulta .card-panel,
+#tabCapas .card-panel,
+#tabHerramientas .card-panel,
+#tabAdministracion .card-panel {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  margin-bottom: 12px !important;
+}
+
+#tabAdministracion .admin-kpi-row {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 6px !important;
+}
+
+#tabAdministracion .admin-kpi {
+  padding: 7px 4px !important;
+}
+
+#tabAdministracion .admin-kpi span {
+  font-size: 8px !important;
+}
+
+#tabAdministracion .admin-kpi b {
+  font-size: 14px !important;
+}
+
+#tabAdministracion .admin-table-wrap {
+  max-height: 220px !important;
+  overflow: auto !important;
+}
+
+#tabAdministracion .admin-table {
+  font-size: 10px !important;
+}
+
+#tabAdministracion .admin-table th,
+#tabAdministracion .admin-table td {
+  padding: 5px !important;
+}
+
+#tabAdministracion .admin-table button {
+  width: auto !important;
+  min-height: 22px !important;
+  padding: 3px 5px !important;
+  font-size: 9px !important;
+  margin: 1px !important;
+}
+
+/* ============================================================
+   v24 - Matriz visual de permisos
+============================================================ */
+.permisos-info {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #703341;
+  border-radius: 10px;
+  padding: 8px;
+  color: #334155;
+  font-size: 10px;
+  line-height: 1.35;
+  margin-bottom: 9px;
+}
+.permisos-matriz-wrap {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  background: #fff;
+}
+.permisos-matriz {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+.permisos-matriz th {
+  background: #703341;
+  color: #fff;
+  padding: 6px;
+  text-align: center;
+  white-space: nowrap;
+}
+.permisos-matriz td {
+  padding: 6px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: center;
+  white-space: nowrap;
+}
+.permisos-matriz td:first-child {
+  text-align: left;
+  font-weight: 900;
+  color: #703341;
+}
+
+
+/* ============================================================
+   v25c - Búsqueda catastral unificada restaurada
+============================================================ */
+.consulta-unificada {
+  padding: 13px !important;
+}
+
+.consulta-unificada input {
+  margin-bottom: 8px !important;
+}
+
+.busqueda-grid-2 {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 8px !important;
+}
+
+.busqueda-grid-2 input {
+  min-width: 0 !important;
+}
+
+.btn-busqueda-unica {
+  margin-top: 4px !important;
+  margin-bottom: 8px !important;
+}
+
+.contador-general {
+  margin-top: 7px !important;
+  text-align: center !important;
+}
+
+.contador-oculto {
+  display: none !important;
+}
+
+@media (max-width: 780px) {
+  .busqueda-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+
+/* ============================================================
+   v25d - Restauración leyenda dinámica flotante
+============================================================ */
+.leyenda-dinamica {
+  position: absolute !important;
+  right: 18px !important;
+  bottom: 18px !important;
+  width: 305px !important;
+  max-height: 48vh !important;
+  overflow: hidden !important;
+  z-index: 1350 !important;
+  background: rgba(255, 255, 255, 0.97) !important;
+  border-radius: 15px !important;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.28) !important;
+  border: 1px solid rgba(112, 51, 65, 0.22) !important;
+  font-family: inherit !important;
+}
+
+.leyenda-dinamica.oculto {
+  display: none !important;
+}
+
+.leyenda-header {
+  background: linear-gradient(135deg, #7a3047, #984b61) !important;
+  color: #fff !important;
+  padding: 10px 12px !important;
+  font-weight: 900 !important;
+  font-size: 13px !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.leyenda-actions {
+  display: flex !important;
+  gap: 6px !important;
+}
+
+.leyenda-actions button {
+  width: 24px !important;
+  height: 24px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  color: #fff !important;
+  background: rgba(255,255,255,.18) !important;
+  cursor: pointer !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  padding: 0 !important;
+}
+
+.leyenda-contenido {
+  padding: 10px !important;
+  max-height: calc(48vh - 44px) !important;
+  overflow-y: auto !important;
+  background: #f8fafc !important;
+}
+
+.leyenda-grupo {
+  background: #fff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  padding: 9px !important;
+  margin-bottom: 8px !important;
+}
+
+.leyenda-grupo-title {
+  color: #703341 !important;
+  font-size: 10.5px !important;
+  font-weight: 900 !important;
+  text-transform: uppercase !important;
+  letter-spacing: .7px !important;
+  margin-bottom: 6px !important;
+}
+
+.leyenda-item {
+  display: grid !important;
+  grid-template-columns: 24px 1fr !important;
+  align-items: center !important;
+  gap: 7px !important;
+  padding: 6px 0 !important;
+  border-bottom: 1px solid #edf2f7 !important;
+}
+
+.leyenda-item:last-child {
+  border-bottom: 0 !important;
+}
+
+.leyenda-item b {
+  display: block !important;
+  color: #1f2937 !important;
+  font-size: 12px !important;
+  line-height: 1.15 !important;
+}
+
+.leyenda-item small {
+  display: block !important;
+  color: #64748b !important;
+  font-size: 10px !important;
+  line-height: 1.15 !important;
+  margin-top: 1px !important;
+}
+
+.leyenda-simbolo {
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 4px !important;
+  display: inline-block !important;
+  box-sizing: border-box !important;
+}
+
+.simbolo-verde {
+  background: rgba(34, 197, 94, .22) !important;
+  border: 2px solid #16a34a !important;
+}
+
+.simbolo-rojo {
+  background: rgba(239, 68, 68, .18) !important;
+  border: 2px solid #dc2626 !important;
+}
+
+.simbolo-amarillo {
+  background: rgba(245, 158, 11, .20) !important;
+  border: 2px solid #d97706 !important;
+}
+
+.simbolo-predios {
+  background: rgba(250, 204, 21, .28) !important;
+  border: 2px solid #111827 !important;
+}
+
+.simbolo-seleccion {
+  background: rgba(0, 0, 255, .12) !important;
+  border: 3px solid #0000ff !important;
+}
+
+.simbolo-colonias {
+  background: rgba(139, 92, 246, .14) !important;
+  border: 2px solid #7c3aed !important;
+}
+
+.simbolo-codigos {
+  background: rgba(249, 115, 22, .16) !important;
+  border: 2px solid #ea580c !important;
+}
+
+.simbolo-aud-alta {
+  background: rgba(239, 68, 68, .18) !important;
+  border: 2px dashed #dc2626 !important;
+}
+
+.simbolo-aud-media {
+  background: rgba(245, 158, 11, .18) !important;
+  border: 2px dashed #d97706 !important;
+}
+
+.simbolo-aud-baja {
+  background: rgba(59, 130, 246, .16) !important;
+  border: 2px dashed #2563eb !important;
+}
+
+.leyenda-dinamica.minimizada .leyenda-contenido {
+  display: none !important;
+}
+
+.btn-mostrar-leyenda {
+  position: absolute !important;
+  right: 18px !important;
+  bottom: 18px !important;
+  z-index: 1351 !important;
+  background: #7a3047 !important;
+  color: #fff !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  padding: 10px 14px !important;
+  font-weight: 900 !important;
+  box-shadow: 0 10px 24px rgba(15,23,42,.28) !important;
+  cursor: pointer !important;
+}
+
+.btn-mostrar-leyenda.oculto {
+  display: none !important;
+}
+
+

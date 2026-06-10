@@ -5,7 +5,12 @@
   <title>Sistema de Gestión Catastral de FC Arquitectos</title>
   <base href="/api/catastro/visor/">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v9.2.4/ol.css">
-  <link rel="stylesheet" href="catastro.css?v=20260601_v107_prefijo_fix">
+  <link rel="stylesheet" href="css/00-base.css?v=20260609_v119_modular">
+  <link rel="stylesheet" href="css/10-mapa.css?v=20260609_v119_modular">
+  <link rel="stylesheet" href="css/20-ficha.css?v=20260609_v119_modular">
+  <link rel="stylesheet" href="css/30-tablas.css?v=20260609_v119_modular">
+  <link rel="stylesheet" href="css/40-modales.css?v=20260609_v119_modular">
+  <link rel="stylesheet" href="css/50-modulos.css?v=20260609_v119_modular">
 </head>
 
 <body>
@@ -799,7 +804,18 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.1/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="catastro.js?v=20260608_v118_lote_resiliente"></script>
+<script src="js/00-nucleo.js?v=20260609_v119_modular"></script>
+<script src="js/10-mapa.js?v=20260609_v119_modular"></script>
+<script src="js/20-ficha.js?v=20260609_v119_modular"></script>
+<script src="js/40-pdf.js?v=20260609_v119_modular"></script>
+<script src="js/30-busqueda.js?v=20260609_v119_modular"></script>
+<script src="js/50-admin.js?v=20260609_v119_modular"></script>
+<script src="js/60-propietarios.js?v=20260609_v119_modular"></script>
+<script src="js/70-movimientos.js?v=20260609_v119_modular"></script>
+<script src="js/80-zonas.js?v=20260609_v119_modular"></script>
+<script src="js/85-condominios.js?v=20260609_v119_modular"></script>
+<script src="js/90-mantenimiento.js?v=20260609_v119_modular"></script>
+<script src="js/99-init.js?v=20260609_v119_modular"></script>
 
 <!-- Modal edición / alta zona homogénea (z-index sobre módulo análisis) -->
 <div id="modalEditarZonaHomogenea" class="modal-analisis-zona-overlay oculto">

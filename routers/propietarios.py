@@ -2795,3 +2795,83 @@ def reemplazar_propietarios_predio_v28(
                 "propietarios": insertados,
                 "padron_actualizados": padron_sync,
             }
+@router.get("/predios/propietarios/sincronizar-padron-pendientes")
+def listar_pendientes_titular_padron_v28(
+    limite: int = Query(500, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    solo_invalidos: bool = Query(False),
+    usuario_actual: dict = Depends(permiso_movimientos)
+):
+    """
+    Lista predios del padrón que siguen sin propietario vigente en catálogo
+    después de la sincronización masiva.
+    """
+    try:
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                where_extra = ""
+                if solo_invalidos:
+                    where_extra = """
+                      AND (
+                            NULLIF(TRIM(p.nombre_completo), '') IS NULL
+                            OR LENGTH(TRIM(COALESCE(p.nombre_completo, ''))) < 3
+                            OR UPPER(TRIM(COALESCE(p.nombre_completo, ''))) IN (
+                                'SIN NOMBRE', 'PROPIETARIO', 'DESCONOCIDO', 'XXXXXXXX', 'X X X', 'N/A', 'NA'
+                            )
+                            OR REGEXP_REPLACE(
+                                COALESCE(p.nombre_completo, ''),
+                                '[A-ZÁÉÍÓÚÜÑ0-9 .,&/\\-]',
+                                '',
+                                'gi'
+                            ) <> ''
+                      )
+                    """
+
+                cur.execute(f"""
+                    SELECT COUNT(*)::int AS total
+                    {_SQL_PENDIENTES_TITULAR_PADRON}
+                    {where_extra};
+                """)
+                total = int((cur.fetchone() or {}).get("total") or 0)
+
+                cur.execute(f"""
+                    SELECT
+                        UPPER(TRIM(p.clave_catastral)) AS clave_catastral,
+                        UPPER(TRIM(COALESCE(p.nombre_completo, ''))) AS nombre_completo,
+                        UPPER(TRIM(COALESCE(p.colonia, ''))) AS colonia,
+                        UPPER(TRIM(COALESCE(p.calle, ''))) AS calle,
+                        UPPER(TRIM(COALESCE(p.numof, ''))) AS numof,
+                        UPPER(TRIM(COALESCE(p.delegacion, ''))) AS delegacion,
+                        CASE
+                            WHEN NULLIF(TRIM(p.nombre_completo), '') IS NULL THEN 'VACIO'
+                            WHEN LENGTH(TRIM(COALESCE(p.nombre_completo, ''))) < 3 THEN 'DEMASIADO_CORTO'
+                            WHEN UPPER(TRIM(COALESCE(p.nombre_completo, ''))) IN (
+                                'SIN NOMBRE', 'PROPIETARIO', 'DESCONOCIDO', 'XXXXXXXX', 'X X X', 'N/A', 'NA'
+                            ) THEN 'NOMBRE_GENERICO'
+                            WHEN REGEXP_REPLACE(
+                                COALESCE(p.nombre_completo, ''),
+                                '[A-ZÁÉÍÓÚÜÑ0-9 .,&/\\-]',
+                                '',
+                                'gi'
+                            ) <> '' THEN 'CARACTERES_RAROS'
+                            ELSE 'NO_RESUELTO'
+                        END AS motivo_probable
+                    {_SQL_PENDIENTES_TITULAR_PADRON}
+                    {where_extra}
+                    ORDER BY p.clave_catastral
+                    LIMIT %s OFFSET %s;
+                """, (limite, offset))
+                rows = [dict(r) for r in cur.fetchall()]
+
+                return {
+                    "ok": True,
+                    "total": total,
+                    "limite": limite,
+                    "offset": offset,
+                    "solo_invalidos": solo_invalidos,
+                    "resultados": rows,
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
