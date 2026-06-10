@@ -294,6 +294,60 @@ function registrarEnterBusquedas() {
   });
 }
 
+async function fetchFeaturePredioOpcional(url) {
+  try {
+    const res = await fetch(url, { cache: "no-store", headers: authHeaders() });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function construirFeatureDesdePrefetch(geojsonPrefetch, claveNorm) {
+  const props = geojsonPrefetch?.properties || {};
+  return {
+    type: "Feature",
+    geometry: geojsonPrefetch.geometry,
+    properties: {
+      clave_catastral: claveNorm,
+      estatus: props.estatus || null,
+      sup_documental: props.superficie ?? props.sup_documental ?? null,
+      dibujado: true,
+      solo_cartografia: true,
+      tiene_expediente: false
+    }
+  };
+}
+
+async function cargarFeaturePredio(claveNorm, geojsonPrefetch, seq) {
+  const ts = Date.now();
+  let feature = await fetchFeaturePredioOpcional(
+    `${API}/padron/${encodeURIComponent(claveNorm)}/ficha?_=${ts}`
+  );
+  if (seq !== seleccionPredioSeq) return null;
+
+  const props = feature?.properties || {};
+  const soloCartografia = props.solo_cartografia === true;
+  const tieneExpediente = props.tiene_expediente === true;
+
+  if (tieneExpediente && !soloCartografia) {
+    const exp = await fetchFeaturePredioOpcional(
+      `${API}/expediente/${encodeURIComponent(claveNorm)}?_=${ts}`
+    );
+    if (seq !== seleccionPredioSeq) return null;
+    if (exp) feature = exp;
+  }
+
+  if (!feature && geojsonPrefetch?.geometry) {
+    feature = construirFeatureDesdePrefetch(geojsonPrefetch, claveNorm);
+  } else if (feature && geojsonPrefetch?.geometry) {
+    feature.geometry = geojsonPrefetch.geometry;
+  }
+
+  return feature;
+}
+
 async function seleccionarPorClave(clave, origen = "programa", opciones = {}) {
   if (!clave) return;
 
@@ -331,41 +385,9 @@ async function seleccionarPorClave(clave, origen = "programa", opciones = {}) {
     }
   }
 
-  const fichaGeojsonResponse = await fetch(`${API}/expediente/${encodeURIComponent(claveNorm)}?_=${Date.now()}`, {
-    cache: "no-store",
-    headers: authHeaders()
-  });
-
+  const featureGeojson = await cargarFeaturePredio(claveNorm, geojsonPrefetch, seq);
   if (seq !== seleccionPredioSeq) return;
-
-  let featureGeojson = null;
-
-  if (fichaGeojsonResponse.ok) {
-    featureGeojson = await fichaGeojsonResponse.json();
-  } else {
-    // Muchos predios existen en padrón/cartografía pero aún no tienen expediente integral.
-    // Sin este respaldo el clic en el mapa dejaba la ficha del predio anterior.
-    console.warn("Expediente no disponible, se intenta padrón:", claveNorm);
-    const resPadron = await fetch(`${API}/padron/${encodeURIComponent(claveNorm)}/ficha?_=${Date.now()}`, {
-      cache: "no-store",
-      headers: authHeaders()
-    });
-    if (seq !== seleccionPredioSeq) return;
-    if (!resPadron.ok) {
-      console.warn("No se pudo cargar ficha del predio:", claveNorm);
-      return;
-    }
-    featureGeojson = await resPadron.json();
-    // Si el clic ya trajo geometría exacta, preferirla sobre la del padrón.
-    if (geojsonPrefetch?.geometry && !featureGeojson?.geometry) {
-      featureGeojson = { ...featureGeojson, geometry: geojsonPrefetch.geometry };
-    }
-    if (geojsonPrefetch?.geometry && featureGeojson?.geometry) {
-      featureGeojson.geometry = geojsonPrefetch.geometry;
-    }
-  }
-
-  if (seq !== seleccionPredioSeq) return;
+  if (!featureGeojson) return;
 
   const ficha = featureGeojson.properties || featureGeojson || {};
 
@@ -373,10 +395,11 @@ async function seleccionarPorClave(clave, origen = "programa", opciones = {}) {
     f => String(f.get("clave_catastral") || "").toUpperCase() === claveNorm
   );
 
-  let debeHacerZoom = origen !== "mapa" || claveNorm !== claveSeleccionadaActual;
+  let debeHacerZoom = origen !== "mapa" || claveNorm !== claveAnterior;
   let geomParaZoom = null;
 
   if (enResultados) {
+    if (seq !== seleccionPredioSeq) return;
     vectorSource.clear();
     const fRes = resultadosSource.getFeatures().find(
       f => String(f.get("clave_catastral") || "").toUpperCase() === claveNorm
@@ -412,6 +435,8 @@ async function seleccionarPorClave(clave, origen = "programa", opciones = {}) {
 
   claveSeleccionadaActual = claveNorm;
   await pintarFicha(ficha);
+  if (seq !== seleccionPredioSeq) return;
+
   document.getElementById("claveInput").value = claveNorm;
   sincronizarClavesMovimientoConPredioActivo();
   actualizarBreadcrumbPredio(claveNorm, window.predioSeleccionado || ficha);

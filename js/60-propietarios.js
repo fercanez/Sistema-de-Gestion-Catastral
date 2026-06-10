@@ -1679,7 +1679,7 @@ async function titularCatalogoPredio(clave) {
 
 async function fichaEnriquecidaPadronV28b(p) {
   const base = { ...(p || {}) };
-  const clave = String(base.clave_catastral || base.clave || document.getElementById('claveInput')?.value || '').trim().toUpperCase();
+  const clave = String(base.clave_catastral || base.clave || "").trim().toUpperCase();
   if (!clave) return base;
 
   let merged = { ...base };
@@ -1728,10 +1728,27 @@ async function fichaEnriquecidaPadronV28b(p) {
   return merged;
 }
 
+function fichaPinturaSigueVigenteV28b(claveEsperada, seqLocal) {
+  if (seqLocal != null && seqLocal !== seleccionPredioSeq) return false;
+  const claveNorm = String(claveEsperada || "").trim().toUpperCase();
+  const claveActual = String(claveSeleccionadaActual || "").trim().toUpperCase();
+  if (claveNorm && claveActual && claveNorm !== claveActual) return false;
+  return true;
+}
+
 if (typeof pintarFichaFlotante === 'function' && !window.__pintarFichaFlotanteBaseV28b) {
   window.__pintarFichaFlotanteBaseV28b = pintarFichaFlotante;
   pintarFichaFlotante = async function(p) {
+    const claveEsperada = String(p?.clave_catastral || p?.clave || "").trim().toUpperCase();
+    const seqLocal = seleccionPredioSeq;
+    if (p?.__enriquecidaV28b) {
+      if (!fichaPinturaSigueVigenteV28b(claveEsperada, seqLocal)) return;
+      window.predioSeleccionado = p;
+      return window.__pintarFichaFlotanteBaseV28b(p);
+    }
     const enriquecida = await fichaEnriquecidaPadronV28b(p);
+    if (!fichaPinturaSigueVigenteV28b(claveEsperada, seqLocal)) return;
+    enriquecida.__enriquecidaV28b = true;
     window.predioSeleccionado = enriquecida;
     return window.__pintarFichaFlotanteBaseV28b(enriquecida);
   };
@@ -1741,7 +1758,11 @@ if (typeof pintarFichaFlotante === 'function' && !window.__pintarFichaFlotanteBa
 if (typeof pintarFicha === 'function' && !window.__pintarFichaBaseV28b) {
   window.__pintarFichaBaseV28b = pintarFicha;
   pintarFicha = async function(p) {
+    const claveEsperada = String(p?.clave_catastral || p?.clave || "").trim().toUpperCase();
+    const seqLocal = seleccionPredioSeq;
     const enriquecida = await fichaEnriquecidaPadronV28b(p);
+    if (!fichaPinturaSigueVigenteV28b(claveEsperada, seqLocal)) return;
+    enriquecida.__enriquecidaV28b = true;
     window.predioSeleccionado = enriquecida;
     return window.__pintarFichaBaseV28b(enriquecida);
   };

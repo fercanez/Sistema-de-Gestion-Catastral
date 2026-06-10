@@ -220,6 +220,12 @@ def ficha_padron(clave: str, usuario_actual: dict = Depends(obtener_usuario_actu
                 tit.tipo_titularidad,
                 tit.total_titulares,
                 tit.suma_porcentaje,
+                EXISTS (
+                    SELECT 1
+                    FROM catastro.v_expediente_integral e
+                    WHERE UPPER(TRIM(e.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
+                ) AS tiene_expediente,
+                FALSE AS solo_cartografia,
                 CASE
                     WHEN g.geom IS NULL THEN NULL
                     ELSE ST_AsGeoJSON(ST_Transform(g.geom, 4326))::json
@@ -230,6 +236,56 @@ def ficha_padron(clave: str, usuario_actual: dict = Depends(obtener_usuario_actu
         """, (clave,))
 
         row = cur.fetchone()
+
+        if not row:
+            cur.execute("""
+                SELECT
+                    p.id AS predio_id,
+                    p.clave_catastral,
+                    NULL::TEXT AS nombre_completo,
+                    NULL::TEXT AS delegacion,
+                    col.nombre_colonia AS colonia,
+                    NULL::TEXT AS calle,
+                    NULL::TEXT AS zona_homogenea,
+                    NULL::INTEGER AS anio_zona,
+                    NULL::TEXT AS descripcion_uso,
+                    NULL::TEXT AS id_tasa,
+                    NULL::NUMERIC AS porcentaje_tasa,
+                    p.cp,
+                    NULL::TEXT AS numof,
+                    NULL::TEXT AS numint,
+                    NULL::TEXT AS letra,
+                    p.sup_documental,
+                    NULL::NUMERIC AS sup_fisica,
+                    NULL::NUMERIC AS sup_const,
+                    NULL::NUMERIC AS valor2026,
+                    p.estatus,
+                    TRUE AS vigente,
+                    TRUE AS dibujado,
+                    NULL::TEXT AS condominio,
+                    NULL::NUMERIC AS adeudo_2026,
+                    NULL::NUMERIC AS adeudo_total,
+                    NULL::INTEGER AS id_persona,
+                    NULL::TEXT AS tipo_persona,
+                    NULL::TEXT AS rfc,
+                    NULL::NUMERIC AS porcentaje_propiedad,
+                    NULL::TEXT AS tipo_titularidad,
+                    NULL::INTEGER AS total_titulares,
+                    NULL::NUMERIC AS suma_porcentaje,
+                    FALSE AS tiene_expediente,
+                    TRUE AS solo_cartografia,
+                    CASE
+                        WHEN p.geom IS NULL THEN NULL
+                        ELSE ST_AsGeoJSON(ST_Transform(p.geom, 4326))::json
+                    END AS geometry
+                FROM catastro.predios p
+                LEFT JOIN catalogos.cat_colonias col
+                    ON p.colonia_id = col.id
+                WHERE UPPER(TRIM(p.clave_catastral)) = UPPER(TRIM(%s))
+                LIMIT 1;
+            """, (clave,))
+            row = cur.fetchone()
+
         cur.close()
         conn.close()
 
