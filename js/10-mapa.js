@@ -94,6 +94,7 @@ function inicializarAdministradorCapas() {
   try { if (typeof vectorLayer !== "undefined") vectorLayer.set("layerId", "fiscal"); } catch(e) {}
 
   actualizarOrdenVisualCapas();
+  sincronizarCapasWmsDesdeControles();
 }
 
 
@@ -159,6 +160,10 @@ function irBreadcrumbInicioInstitucional() {
 
 function actualizarLayoutPrincipal() {
   const panel = document.getElementById("panel");
+  if (typeof enModoGestionCatastral === "function" && enModoGestionCatastral() && panel) {
+    panel.classList.remove("panel-oculto");
+    document.body.classList.remove("panel-oculto-activo");
+  }
   const tabla = document.getElementById("tablaResultadosFlotante");
   const ficha = document.getElementById("fichaFlotante");
   const oculto = panel?.classList.contains("panel-oculto");
@@ -201,6 +206,26 @@ function mostrarPanelPrincipal() {
   if (panel) panel.classList.remove("panel-oculto");
   if (btn) btn.classList.add("oculto");
   actualizarLayoutPrincipal();
+}
+
+function sincronizarCapasWmsDesdeControles() {
+  const chkPred = document.getElementById("chkPrediosWms");
+  const chkCol = document.getElementById("chkColoniasWms");
+  const chkCod = document.getElementById("chkCodigosWms");
+  const chkGeom = document.getElementById("chkCambiosGeom");
+
+  if (chkPred) aplicarVisibilidadCapaWms(prediosWmsLayer, chkPred.checked);
+  if (chkCol) aplicarVisibilidadCapaWms(coloniasWmsLayer, chkCol.checked);
+  if (chkCod) aplicarVisibilidadCapaWms(codigosWmsLayer, chkCod.checked);
+  if (chkGeom) aplicarVisibilidadCapaWms(capaCambiosGeometricos, chkGeom.checked);
+}
+
+function aplicarVisibilidadCapaWms(capa, visible) {
+  if (!capa || typeof capa.setVisible !== "function") return;
+  capa.setVisible(!!visible);
+  try {
+    if (typeof map !== "undefined" && map) map.render();
+  } catch (e) {}
 }
 
 const API = "https://fcnarqnodo.hopto.org/api/catastro";
@@ -329,8 +354,12 @@ const seleccionContornoLayer = new ol.layer.Vector({
     stroke: new ol.style.Stroke({
       color: COLOR_CONTORNO_SELECCION,
       width: 4,
+      lineDash: [12, 8],
       lineCap: "round",
       lineJoin: "round"
+    }),
+    fill: new ol.style.Fill({
+      color: "rgba(0, 0, 255, 0.06)"
     })
   })
 });
@@ -575,7 +604,7 @@ const capaCambiosGeometricos = new ol.layer.Vector({
 });
 
 const prediosWmsLayer = new ol.layer.Tile({
-  visible: true,
+  visible: false,
   opacity: 0.85,
   source: new ol.source.TileWMS({
     url: "https://fcnarqnodo.hopto.org/geoserver/catastro_bc/wms",
@@ -592,8 +621,8 @@ const prediosWmsLayer = new ol.layer.Tile({
 });
 
 const coloniasWmsLayer = new ol.layer.Tile({
-  visible: false,
-  opacity: 0.55,
+  visible: true,
+  opacity: 1,
   source: new ol.source.TileWMS({
     url: "https://fcnarqnodo.hopto.org/geoserver/geonode/wms",
     params: {
@@ -699,22 +728,26 @@ function cambiarCapaBase() {
 }
 
 function togglePrediosWms() {
-  prediosWmsLayer.setVisible(document.getElementById("chkPrediosWms").checked);
+  const chk = document.getElementById("chkPrediosWms");
+  aplicarVisibilidadCapaWms(prediosWmsLayer, chk?.checked === true);
   refrescarLeyendaDespuesDeCambio();
 }
 
 function toggleColoniasWms() {
-  coloniasWmsLayer.setVisible(document.getElementById("chkColoniasWms").checked);
+  const chk = document.getElementById("chkColoniasWms");
+  aplicarVisibilidadCapaWms(coloniasWmsLayer, chk?.checked === true);
   refrescarLeyendaDespuesDeCambio();
 }
 
 function toggleCodigosWms() {
-  codigosWmsLayer.setVisible(document.getElementById("chkCodigosWms").checked);
+  const chk = document.getElementById("chkCodigosWms");
+  aplicarVisibilidadCapaWms(codigosWmsLayer, chk?.checked === true);
   refrescarLeyendaDespuesDeCambio();
 }
 
 function toggleCambiosGeom() {
-  capaCambiosGeometricos.setVisible(document.getElementById("chkCambiosGeom").checked);
+  const chk = document.getElementById("chkCambiosGeom");
+  aplicarVisibilidadCapaWms(capaCambiosGeometricos, chk?.checked === true);
   refrescarLeyendaDespuesDeCambio();
 }
 
@@ -759,6 +792,53 @@ function capaVisibleSegura(capa) {
 
 function obtenerContenedorLeyendaActivo() {
   return document.getElementById("leyendaContenido");
+}
+
+function aplicarCapasVistaGeneral() {
+  capaOrdenEstado.colonias = 50;
+  capaOrdenEstado.predios = 30;
+  aplicarZIndexCapa("colonias");
+  aplicarZIndexCapa("predios");
+
+  const chkPred = document.getElementById("chkPrediosWms");
+  const chkCol = document.getElementById("chkColoniasWms");
+  if (chkPred) chkPred.checked = false;
+  if (chkCol) chkCol.checked = true;
+
+  aplicarVisibilidadCapaWms(prediosWmsLayer, false);
+  aplicarVisibilidadCapaWms(coloniasWmsLayer, true);
+  coloniasWmsLayer.setOpacity(1);
+
+  const opColonias = document.getElementById("opColonias");
+  const opColoniasTxt = document.getElementById("opColoniasTxt");
+  if (opColonias) opColonias.value = 100;
+  if (opColoniasTxt) opColoniasTxt.textContent = "100%";
+
+  refrescarLeyendaDespuesDeCambio();
+}
+
+function activarCapasPredioSeleccionado() {
+  capaOrdenEstado.predios = 55;
+  capaOrdenEstado.colonias = 45;
+  aplicarZIndexCapa("predios");
+  aplicarZIndexCapa("colonias");
+
+  const chkPred = document.getElementById("chkPrediosWms");
+  if (chkPred) chkPred.checked = true;
+  aplicarVisibilidadCapaWms(prediosWmsLayer, true);
+
+  refrescarLeyendaDespuesDeCambio();
+}
+
+function restaurarCapasModuloCompleto() {
+  const chkPred = document.getElementById("chkPrediosWms");
+  if (chkPred && !chkPred.checked) {
+    chkPred.checked = true;
+    aplicarVisibilidadCapaWms(prediosWmsLayer, true);
+    capaOrdenEstado.predios = 30;
+    aplicarZIndexCapa("predios");
+    refrescarLeyendaDespuesDeCambio();
+  }
 }
 
 function toggleLeyendaIntegradaPanel() {

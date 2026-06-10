@@ -1099,6 +1099,7 @@ async function cargarCopropietariosPredio(clave = copropEstado.clave) {
     if (!r.ok) throw new Error(extraerMensajeApi(data, "No se pudieron cargar propietarios del predio."));
 
     copropEstado.propietarios = data.propietarios || [];
+    window._cachePropietariosPredioClave[String(clave).trim().toUpperCase()] = data;
     copropEstado.titularPadron = data.titular_padron || null;
     copropEstado.padronSincronizado = !!data.padron_sincronizado;
     copropEstado.condominio = data.condominio || null;
@@ -1550,34 +1551,43 @@ async function cargarTitularidadFicha(clave) {
   destinos.forEach(d => d.innerHTML = "Cargando titularidad...");
 
   try {
-    const r = await fetch(`${API}/predios/${encodeURIComponent(claveFinal)}/propietarios?_=${Date.now()}`, {
-      cache: "no-store",
-      headers: authHeaders()
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.detail || "No se pudo cargar titularidad.");
-
-    const props = data.propietarios || [];
-    const html = props.length ? `
-      <table class="coprop-table">
-        <thead><tr><th>Nombre</th><th>RFC</th><th>%</th></tr></thead>
-        <tbody>
-          ${props.map(p => `
-            <tr>
-              <td>${escapeHtml(nombrePersonaCatalogo(p))}</td>
-              <td>${escapeHtml(p.rfc || "")}</td>
-              <td>${Number(p.porcentaje_propiedad || 0).toFixed(2)}%</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-      <div class="coprop-total ${data.valido ? "ok" : "error"}">TOTAL: ${Number(data.suma_porcentaje || 0).toFixed(2)}%</div>
-    ` : "Sin propietarios registrados.";
-
-    destinos.forEach(d => d.innerHTML = html);
+    const data = typeof fetchPropietariosPredioCached === "function"
+      ? await fetchPropietariosPredioCached(claveFinal)
+      : null;
+    if (!data) {
+      const r = await fetch(`${API}/predios/${encodeURIComponent(claveFinal)}/propietarios?_=${Date.now()}`, {
+        cache: "no-store",
+        headers: authHeaders()
+      });
+      const parsed = await r.json();
+      if (!r.ok) throw new Error(parsed.detail || "No se pudo cargar titularidad.");
+      renderTitularidadFichaDestinos(destinos, parsed);
+      return;
+    }
+    renderTitularidadFichaDestinos(destinos, data);
   } catch (e) {
     destinos.forEach(d => d.innerHTML = `<div class="coprop-msg error">${escapeHtml(e.message)}</div>`);
   }
+}
+
+function renderTitularidadFichaDestinos(destinos, data) {
+  const props = data.propietarios || [];
+  const html = props.length ? `
+    <table class="coprop-table">
+      <thead><tr><th>Nombre</th><th>RFC</th><th>%</th></tr></thead>
+      <tbody>
+        ${props.map(p => `
+          <tr>
+            <td>${escapeHtml(nombrePersonaCatalogo(p))}</td>
+            <td>${escapeHtml(p.rfc || "")}</td>
+            <td>${Number(p.porcentaje_propiedad || 0).toFixed(2)}%</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+    <div class="coprop-total ${data.valido ? "ok" : "error"}">TOTAL: ${Number(data.suma_porcentaje || 0).toFixed(2)}%</div>
+  ` : "Sin propietarios registrados.";
+  destinos.forEach(d => d.innerHTML = html);
 }
 
 async function refrescarFichaClaveActual(clave) {
@@ -1658,45 +1668,97 @@ async function sincronizarNombrePadronDesdeCatalogo(clave) {
 }
 
 async function titularCatalogoPredio(clave) {
+  const data = await fetchPropietariosPredioCached(clave);
+  if (!data) return null;
+  const rows = data.propietarios || [];
+  if (!rows.length) return null;
+  const principal = rows.find(x => String(x.tipo_titularidad || "").toUpperCase() === "PROPIETARIO") || rows[0];
+  return principal || null;
+}
+
+window._cachePropietariosPredioClave = window._cachePropietariosPredioClave || {};
+window._inflightPropietariosPredio = window._inflightPropietariosPredio || {};
+
+function invalidarCachePropietariosPredio(clave) {
+  const claveNorm = String(clave || "").trim().toUpperCase();
+  if (claveNorm) delete window._cachePropietariosPredioClave[claveNorm];
+}
+
+async function fetchPropietariosPredioCached(clave) {
   const claveNorm = String(clave || "").trim().toUpperCase();
   if (!claveNorm) return null;
-  try {
-    const r = await fetch(`${API}/predios/${encodeURIComponent(claveNorm)}/propietarios?_=${Date.now()}`, {
-      cache: "no-store",
-      headers: typeof authHeaders === "function" ? authHeaders() : {}
-    });
-    if (!r.ok) return null;
-    const data = await r.json();
-    const rows = data.propietarios || [];
-    if (!rows.length) return null;
-    const principal = rows.find(x => String(x.tipo_titularidad || "").toUpperCase() === "PROPIETARIO") || rows[0];
-    return principal || null;
-  } catch (e) {
-    console.warn("No se pudo leer titular del catálogo:", e);
-    return null;
+
+  if (window._cachePropietariosPredioClave[claveNorm]) {
+    return window._cachePropietariosPredioClave[claveNorm];
   }
+  if (window._inflightPropietariosPredio[claveNorm]) {
+    return window._inflightPropietariosPredio[claveNorm];
+  }
+
+  const prom = (async () => {
+    try {
+      const r = await fetch(`${API}/predios/${encodeURIComponent(claveNorm)}/propietarios?_=${Date.now()}`, {
+        cache: "no-store",
+        headers: typeof authHeaders === "function" ? authHeaders() : {}
+      });
+      if (!r.ok) return null;
+      const data = await r.json();
+      window._cachePropietariosPredioClave[claveNorm] = data;
+      return data;
+    } catch (e) {
+      console.warn("No se pudo leer propietarios del predio:", e);
+      return null;
+    }
+  })();
+
+  window._inflightPropietariosPredio[claveNorm] = prom;
+  try {
+    return await prom;
+  } finally {
+    delete window._inflightPropietariosPredio[claveNorm];
+  }
+}
+window.fetchPropietariosPredioCached = fetchPropietariosPredioCached;
+window.invalidarCachePropietariosPredio = invalidarCachePropietariosPredio;
+
+function faltanDatosPadronEnFicha(p) {
+  if (!p) return true;
+  return !p.delegacion && p.valor2026 == null && p.sup_documental == null && !p.descripcion_uso;
 }
 
 async function fichaEnriquecidaPadronV28b(p) {
   const base = { ...(p || {}) };
   const clave = String(base.clave_catastral || base.clave || "").trim().toUpperCase();
   if (!clave) return base;
+  if (base.__enriquecidaV28b) return base;
 
   let merged = { ...base };
 
-  // Ambas consultas son independientes: se lanzan en paralelo para no encadenar
-  // latencia (antes se hacían en secuencia y eso retrasaba la ficha).
-  const fichaPadronPromise = fetch(`${API}/padron/${encodeURIComponent(clave)}/ficha?_=${Date.now()}`, {
-    cache: 'no-store',
-    headers: authHeaders()
-  })
-    .then(r => (r.ok ? r.json() : null))
-    .catch(e => { console.warn('No se pudo enriquecer ficha con padrón:', e); return null; });
+  const cacheFeature = window._cacheFeaturePredioPorClave?.[clave];
+  let dataPadron = cacheFeature || null;
+  const necesitaFichaRemota = !dataPadron && faltanDatosPadronEnFicha(merged);
 
-  const [titular, dataPadron] = await Promise.all([
+  const fichaPadronPromise = necesitaFichaRemota
+    ? fetch(`${API}/padron/${encodeURIComponent(clave)}/ficha?_=${Date.now()}`, {
+        cache: "no-store",
+        headers: authHeaders()
+      })
+        .then(r => (r.ok ? r.json() : null))
+        .catch(e => { console.warn("No se pudo enriquecer ficha con padrón:", e); return null; })
+    : Promise.resolve(dataPadron);
+
+  const [titular, dataPadronFetched] = await Promise.all([
     titularCatalogoPredio(clave),
     fichaPadronPromise
   ]);
+
+  if (!dataPadron && dataPadronFetched) {
+    dataPadron = dataPadronFetched;
+    if (dataPadronFetched?.geometry || dataPadronFetched?.properties) {
+      window._cacheFeaturePredioPorClave = window._cacheFeaturePredioPorClave || {};
+      window._cacheFeaturePredioPorClave[clave] = dataPadronFetched;
+    }
+  }
 
   // 1) Datos del padrón (geometría, valores, ubicación, etc.).
   let nombrePadron = "";
@@ -1758,6 +1820,10 @@ if (typeof pintarFichaFlotante === 'function' && !window.__pintarFichaFlotanteBa
 if (typeof pintarFicha === 'function' && !window.__pintarFichaBaseV28b) {
   window.__pintarFichaBaseV28b = pintarFicha;
   pintarFicha = async function(p) {
+    if (p?.__enriquecidaV28b) {
+      window.predioSeleccionado = p;
+      return window.__pintarFichaBaseV28b(p);
+    }
     const claveEsperada = String(p?.clave_catastral || p?.clave || "").trim().toUpperCase();
     const seqLocal = seleccionPredioSeq;
     const enriquecida = await fichaEnriquecidaPadronV28b(p);

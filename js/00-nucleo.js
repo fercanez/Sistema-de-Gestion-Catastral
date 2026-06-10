@@ -45,16 +45,15 @@ function mostrarLoginInstitucional() {
   if (overlay) overlay.classList.remove("oculto");
   if (barra) barra.classList.add("oculto");
   if (app) app.classList.add("oculto");
-  document.body.classList.remove("portal-institucional-activo");
+  document.getElementById("selectorModulosOverlay")?.classList.add("oculto");
+  document.body.classList.remove("portal-institucional-activo", "portal-modulo-activo", "modo-gestion-catastral", "modo-portal-completo", "popup-predio-abierto");
 }
 
 function mostrarSistemaInstitucional(usuario) {
   const overlay = document.getElementById("loginOverlay");
   const barra = document.getElementById("barraSesion");
-  const app = document.getElementById("appInstitucional");
 
   if (overlay) overlay.classList.add("oculto");
-  if (app) app.classList.remove("oculto");
   document.body.classList.add("portal-institucional-activo");
 
   if (barra) {
@@ -65,11 +64,24 @@ function mostrarSistemaInstitucional(usuario) {
 
   aplicarPermisosVisuales(usuario?.rol || "consulta");
   iniciarRelojInstitucional();
-  actualizarBreadcrumbModulo("tabConsulta");
 
-  // Los dashboards consultan endpoints protegidos: se cargan aquí, ya con
-  // sesión válida (tanto al validar token como al iniciar sesión), para que
-  // siempre viajen con el token y no devuelvan 401.
+  if (typeof mostrarSelectorModulos === "function") {
+    mostrarSelectorModulos(usuario);
+    return;
+  }
+
+  const app = document.getElementById("appInstitucional");
+  if (app) app.classList.remove("oculto");
+  actualizarBreadcrumbModulo("tabConsulta");
+  _iniciarDashboardsPostLogin(usuario);
+  actualizarLeyendaDinamica();
+  if (document.getElementById("chkLeyenda")?.checked !== false) {
+    aplicarVisibilidadLeyendaIntegrada(true);
+  }
+  actualizarLayoutPrincipal();
+}
+
+function _iniciarDashboardsPostLogin(usuario) {
   setTimeout(() => {
     if (typeof cargarDashboardCartografico === "function") cargarDashboardCartografico();
     if (typeof cargarDashboardFiscal === "function") cargarDashboardFiscal();
@@ -81,12 +93,6 @@ function mostrarSistemaInstitucional(usuario) {
       if (typeof cargarAuditoriaAdmin === "function") cargarAuditoriaAdmin();
     }, 400);
   }
-
-  actualizarLeyendaDinamica();
-  if (document.getElementById("chkLeyenda")?.checked !== false) {
-    aplicarVisibilidadLeyendaIntegrada(true);
-  }
-  actualizarLayoutPrincipal();
 }
 
 function setLoginMensaje(texto, tipo = "") {
@@ -182,6 +188,10 @@ async function validarSesionInstitucional() {
 }
 
 function cerrarSesionInstitucional() {
+  if (typeof cerrarPopupPredioWorkspace === "function") cerrarPopupPredioWorkspace();
+  document.getElementById("selectorModulosOverlay")?.classList.add("oculto");
+  document.getElementById("appInstitucional")?.classList.add("oculto");
+  document.body.classList.remove("portal-modulo-activo", "modo-gestion-catastral", "modo-portal-completo", "popup-predio-abierto");
   limpiarSesionInstitucional();
   mostrarLoginInstitucional();
 }
@@ -243,7 +253,7 @@ function prepararEventosLoginInstitucional() {
 const capaOrdenEstado = {
   predios: 30,
   fiscal: 60,
-  colonias: 20,
+  colonias: 50,
   codigos: 25,
   auditoria: 70
 };

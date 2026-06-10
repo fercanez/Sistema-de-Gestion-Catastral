@@ -108,6 +108,7 @@ window.addEventListener("load", function() {
   inicializarDashboardMinimizado();
   actualizarLayoutPrincipal();
   actualizarLeyendaDinamica();
+  if (typeof engancharPortalModulos === "function") engancharPortalModulos();
   if (document.getElementById("chkLeyenda")?.checked !== false) {
     aplicarVisibilidadLeyendaIntegrada(true);
   }

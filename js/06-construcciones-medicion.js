@@ -1,0 +1,1330 @@
+/* Construcciones / Medidas — adaptado de consulta-medicion.php */
+
+let popupConstrMap = null;
+let popupConstrDraw = null;
+let popupConstrMostrarVertices = true;
+let popupConstrPanelMedicionVisible = true;
+let popupConstrMedicionLibreVisible = true;
+let popupConstrMedicionOpacidad = 1;
+let popupConstrMedicionEscala = 1;
+let popupConstrGeom3857 = null;
+let popupConstrGeom32611 = null;
+let popupConstrCapas = null;
+let popupConstrClaveActual = "";
+let popupConstrProj4Ready = false;
+let popupConstrSnapSnapping = false;
+let popupConstrDrawSnapCleanup = null;
+let popupConstrSnapReloadTimer = null;
+
+function asegurarProj4Utm11() {
+  if (popupConstrProj4Ready) return true;
+  try {
+    if (typeof proj4 === "undefined") return false;
+    proj4.defs("EPSG:32611", "+proj=utm +zone=11 +datum=WGS84 +units=m +no_defs");
+    if (ol.proj.proj4 && typeof ol.proj.proj4.register === "function") {
+      ol.proj.proj4.register(proj4);
+    } else if (typeof ol.proj.register === "function") {
+      ol.proj.register(proj4);
+    }
+    popupConstrProj4Ready = true;
+    return true;
+  } catch (e) {
+    console.warn("No se pudo registrar EPSG:32611:", e);
+    return false;
+  }
+}
+
+function popupConstrGetMainPolygon(geom) {
+  if (!geom) return null;
+  const type = geom.getType();
+  if (type === "Polygon") return geom;
+  if (type === "MultiPolygon") {
+    const polys = geom.getPolygons();
+    return polys.length ? polys[0] : null;
+  }
+  return null;
+}
+
+function popupConstrRad2deg(r) {
+  return r * 180 / Math.PI;
+}
+
+function popupConstrDms(a) {
+  const d = Math.floor(a);
+  const mFloat = (a - d) * 60;
+  const m = Math.floor(mFloat);
+  const s = (mFloat - m) * 60;
+  return `${d}°${m}'${s.toFixed(0)}"`;
+}
+
+function popupConstrFormatUtm(value) {
+  const s = Number(value).toFixed(3);
+  const parts = s.split(".");
+  let intPart = parts[0];
+  const decPart = parts[1];
+  let withSep = "";
+  let count = 0;
+  for (let i = intPart.length - 1; i >= 0; i--) {
+    withSep = intPart[i] + withSep;
+    count++;
+    if (count === 3 && i !== 0) {
+      withSep = "'" + withSep;
+      count = 0;
+    }
+  }
+  return `${withSep},${decPart}`;
+}
+
+function popupConstrTransformGeom(geom, from, to) {
+  if (!geom) return null;
+  const clone = geom.clone();
+  clone.transform(from, to);
+  return clone;
+}
+
+function popupConstrCrearCapasMapa() {
+  const googleHybrid = new ol.layer.Tile({
+    visible: true,
+    source: new ol.source.XYZ({
+      url: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+      attributions: "Google"
+    })
+  });
+  const googleSat = new ol.layer.Tile({
+    visible: false,
+    source: new ol.source.XYZ({
+      url: "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+      attributions: "Google"
+    })
+  });
+  const esri = new ol.layer.Tile({
+    visible: false,
+    source: new ol.source.XYZ({
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      attributions: "Esri"
+    })
+  });
+  const osm = new ol.layer.Tile({
+    visible: false,
+    source: new ol.source.OSM()
+  });
+  const coloniasWms = new ol.layer.Tile({
+    visible: false,
+    opacity: 0.55,
+    source: new ol.source.TileWMS({
+      url: "https://fcnarqnodo.hopto.org/geoserver/geonode/wms",
+      params: {
+        LAYERS: "colonias",
+        TILED: true,
+        VERSION: "1.1.1",
+        FORMAT: "image/png",
+        TRANSPARENT: true
+      },
+      serverType: "geoserver",
+      crossOrigin: "anonymous"
+    })
+  });
+  const prediosWms = new ol.layer.Tile({
+    visible: true,
+    opacity: 0.88,
+    source: new ol.source.TileWMS({
+      url: "https://fcnarqnodo.hopto.org/geoserver/catastro_bc/wms",
+      params: {
+        LAYERS: "catastro_bc:predios_oficial",
+        TILED: true,
+        VERSION: "1.1.1",
+        FORMAT: "image/png",
+        TRANSPARENT: true
+      },
+      serverType: "geoserver",
+      crossOrigin: "anonymous"
+    })
+  });
+  const construccionesWms = new ol.layer.Tile({
+    visible: false,
+    opacity: 0.85,
+    source: new ol.source.TileWMS({
+      url: "https://fcnarqnodo.hopto.org/geoserver/geonode/wms",
+      params: {
+        LAYERS: "geonode:construccionesmxli",
+        TILED: true,
+        VERSION: "1.1.1",
+        FORMAT: "image/png",
+        TRANSPARENT: true
+      },
+      serverType: "geoserver",
+      crossOrigin: "anonymous"
+    })
+  });
+
+  const predioVector = new ol.layer.Vector({
+    source: new ol.source.Vector(),
+    style: new ol.style.Style({
+      stroke: new ol.style.Stroke({ color: "#0050ff", width: 4, lineDash: [10, 6] }),
+      fill: new ol.style.Fill({ color: "rgba(0, 80, 255, 0.18)" })
+    })
+  });
+
+  const medidasPredio = new ol.layer.Vector({
+    source: new ol.source.Vector(),
+    style: function(f) {
+      return new ol.style.Style({
+        text: new ol.style.Text({
+          text: f.get("texto"),
+          font: "bold 12px Arial",
+          fill: new ol.style.Fill({ color: "#cc0000" }),
+          stroke: new ol.style.Stroke({ color: "#fff", width: 4 }),
+          placement: "line"
+        })
+      });
+    }
+  });
+
+  const vertices = new ol.layer.Vector({
+    source: new ol.source.Vector(),
+    style: function(feature) {
+      return new ol.style.Style({
+        image: new ol.style.Circle({
+          radius: 5,
+          fill: new ol.style.Fill({ color: "rgba(255,255,255,0)" }),
+          stroke: new ol.style.Stroke({ color: "#cc0000", width: 2 })
+        }),
+        text: new ol.style.Text({
+          text: feature.get("etiqueta"),
+          font: "bold 12px Arial",
+          fill: new ol.style.Fill({ color: "#cc0000" }),
+          stroke: new ol.style.Stroke({ color: "#fff", width: 3 }),
+          textAlign: "center",
+          textBaseline: "middle",
+          offsetY: -16
+        })
+      });
+    }
+  });
+
+  const medicionLibre = new ol.layer.Vector({
+    source: new ol.source.Vector(),
+    style: function(feature) {
+      const geom = feature.getGeometry();
+      const op = popupConstrMedicionOpacidad;
+      const w = 3 * popupConstrMedicionEscala;
+      return new ol.style.Style({
+        stroke: new ol.style.Stroke({ color: `rgba(204, 0, 0, ${op})`, width: w }),
+        fill: geom && geom.getType() === "Polygon"
+          ? new ol.style.Fill({ color: `rgba(204, 0, 0, ${0.12 * op})` })
+          : null
+      });
+    }
+  });
+
+  const medicionEtiquetas = new ol.layer.Vector({
+    source: new ol.source.Vector(),
+    style: function(f) {
+      const fs = Math.max(9, Math.round(12 * popupConstrMedicionEscala));
+      const op = popupConstrMedicionOpacidad;
+      return new ol.style.Style({
+        text: new ol.style.Text({
+          text: f.get("texto"),
+          font: `bold ${fs}px Arial`,
+          fill: new ol.style.Fill({ color: `rgba(204, 0, 0, ${op})` }),
+          stroke: new ol.style.Stroke({ color: `rgba(255, 255, 255, ${op})`, width: 4 }),
+          placement: f.get("placement") || "point"
+        })
+      });
+    }
+  });
+
+  const prediosSnapVector = new ol.layer.Vector({
+    source: new ol.source.Vector(),
+    visible: false
+  });
+
+  const construccionesVector = new ol.layer.Vector({
+    source: new ol.source.Vector(),
+    style: new ol.style.Style({
+      stroke: new ol.style.Stroke({ color: "#e65100", width: 2 }),
+      fill: new ol.style.Fill({ color: "rgba(255, 152, 0, 0.35)" })
+    })
+  });
+
+  return {
+    googleHybrid, googleSat, esri, osm,
+    coloniasWms, prediosWms, construccionesWms,
+    predioVector, medidasPredio, vertices, medicionLibre, medicionEtiquetas,
+    construccionesVector, prediosSnapVector
+  };
+}
+
+function popupConstrSnapActivo() {
+  return document.getElementById("popupConstrChkSnap")?.checked !== false;
+}
+
+function popupConstrSnapToleranciaPx(factor) {
+  if (!popupConstrMap) return 15 * (factor || 1);
+  return popupConstrMap.getView().getResolution() * (factor || 22);
+}
+
+function popupConstrSnapClaveVertice(v) {
+  return `${Number(v[0]).toFixed(3)},${Number(v[1]).toFixed(3)}`;
+}
+
+function popupConstrRecolectarVertices(geom) {
+  const verts = [];
+  if (!geom) return verts;
+  const tipo = geom.getType();
+  if (tipo === "Point") {
+    verts.push(geom.getCoordinates());
+  } else if (tipo === "LineString") {
+    verts.push(...geom.getCoordinates());
+  } else if (tipo === "Polygon") {
+    geom.getCoordinates().forEach(ring => {
+      const lim = ring.length > 1 ? ring.length - 1 : ring.length;
+      for (let i = 0; i < lim; i++) verts.push(ring[i]);
+    });
+  } else if (tipo === "MultiPolygon") {
+    geom.getPolygons().forEach(poly => {
+      poly.getCoordinates().forEach(ring => {
+        const lim = ring.length > 1 ? ring.length - 1 : ring.length;
+        for (let i = 0; i < lim; i++) verts.push(ring[i]);
+      });
+    });
+  } else if (tipo === "MultiLineString") {
+    geom.getLineStrings().forEach(ls => verts.push(...ls.getCoordinates()));
+  }
+  return verts;
+}
+
+function popupConstrFuentesSnap() {
+  if (!popupConstrCapas) return [];
+  return [
+    popupConstrCapas.predioVector.getSource(),
+    popupConstrCapas.construccionesVector.getSource(),
+    popupConstrCapas.prediosSnapVector.getSource()
+  ];
+}
+
+function popupConstrSnapCoordenada(coord) {
+  if (!popupConstrSnapActivo() || !coord) return coord;
+
+  const tolP = popupConstrSnapToleranciaPx(34);
+  const tolVertice = popupConstrSnapToleranciaPx(26);
+  const tolBorde = popupConstrSnapToleranciaPx(16);
+
+  let mejor = null;
+  let mejorDist = tolP;
+
+  // 1) Vértices etiquetados P1, P2… (máxima prioridad)
+  if (popupConstrCapas?.vertices) {
+    popupConstrCapas.vertices.getSource().getFeatures().forEach(feature => {
+      const geom = feature.getGeometry();
+      if (!geom || geom.getType() !== "Point") return;
+      const v = geom.getCoordinates();
+      const d = ol.coordinate.distance(coord, v);
+      if (d < mejorDist) {
+        mejorDist = d;
+        mejor = v;
+      }
+    });
+  }
+  if (mejor) return mejor.slice();
+
+  // 2) Esquinas de predios / construcciones (sin repetir)
+  mejorDist = tolVertice;
+  const vistos = new Set();
+  popupConstrFuentesSnap().forEach(source => {
+    source.getFeatures().forEach(feature => {
+      popupConstrRecolectarVertices(feature.getGeometry()).forEach(v => {
+        const key = popupConstrSnapClaveVertice(v);
+        if (vistos.has(key)) return;
+        vistos.add(key);
+        const d = ol.coordinate.distance(coord, v);
+        if (d < mejorDist) {
+          mejorDist = d;
+          mejor = v;
+        }
+      });
+    });
+  });
+  if (mejor) return mejor.slice();
+
+  // 3) Aristas / bordes (solo si no hay vértice cercano)
+  mejor = coord;
+  mejorDist = tolBorde;
+  popupConstrFuentesSnap().forEach(source => {
+    source.getFeatures().forEach(feature => {
+      const geom = feature.getGeometry();
+      if (!geom || geom.getType() === "Point") return;
+      const cp = geom.getClosestPoint(coord);
+      const d = ol.coordinate.distance(coord, cp);
+      if (d < mejorDist) {
+        mejorDist = d;
+        mejor = cp;
+      }
+    });
+  });
+
+  return Array.isArray(mejor) ? mejor.slice() : mejor;
+}
+
+function popupConstrCoordsIguales(a, b) {
+  return Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+}
+
+function popupConstrSnapGeometriaSketch(geom) {
+  if (!geom || !popupConstrSnapActivo() || popupConstrSnapSnapping) return;
+
+  const tipo = geom.getType();
+  if (tipo === "LineString") {
+    const orig = geom.getCoordinates();
+    const snapped = orig.map(c => popupConstrSnapCoordenada(c));
+    if (!snapped.some((c, i) => !popupConstrCoordsIguales(c, orig[i]))) return;
+    popupConstrSnapSnapping = true;
+    geom.setCoordinates(snapped);
+    popupConstrSnapSnapping = false;
+  } else if (tipo === "Polygon") {
+    const orig = geom.getCoordinates();
+    const snapped = orig.map(ring => ring.map(c => popupConstrSnapCoordenada(c)));
+    const changed = snapped.some((ring, ri) =>
+      ring.some((c, i) => !popupConstrCoordsIguales(c, orig[ri][i]))
+    );
+    if (!changed) return;
+    popupConstrSnapSnapping = true;
+    geom.setCoordinates(snapped);
+    popupConstrSnapSnapping = false;
+  }
+}
+
+function popupConstrObtenerSketchDraw() {
+  const overlay = popupConstrDraw?.getOverlay?.();
+  const feats = overlay?.getSource?.()?.getFeatures?.();
+  return feats?.[0]?.getGeometry?.() || null;
+}
+
+function popupConstrDesinstalarSnapEnVivo() {
+  if (typeof popupConstrDrawSnapCleanup === "function") {
+    popupConstrDrawSnapCleanup();
+  }
+  popupConstrDrawSnapCleanup = null;
+}
+
+function popupConstrInstalarSnapEnVivo() {
+  popupConstrDesinstalarSnapEnVivo();
+  if (!popupConstrMap || !popupConstrDraw) return;
+
+  const refrescarSketch = () => {
+    const geom = popupConstrObtenerSketchDraw();
+    if (geom) popupConstrSnapGeometriaSketch(geom);
+  };
+
+  const onPointerMove = () => refrescarSketch();
+  const onClick = () => {
+    setTimeout(refrescarSketch, 0);
+    requestAnimationFrame(refrescarSketch);
+  };
+
+  popupConstrMap.on("pointermove", onPointerMove);
+  popupConstrMap.on("click", onClick);
+
+  const onDrawStart = evt => {
+    refrescarSketch();
+    const geom = evt.feature.getGeometry();
+    const onChange = () => refrescarSketch();
+    geom.on("change", onChange);
+    evt.feature.set("popupConstrSnapChange", onChange);
+  };
+
+  const limpiarDraw = evt => {
+    const geom = evt.feature?.getGeometry?.();
+    const onChange = evt.feature?.get?.("popupConstrSnapChange");
+    if (geom && onChange) geom.un("change", onChange);
+    if (geom) popupConstrSnapGeometriaSketch(geom);
+    popupConstrDesinstalarSnapEnVivo();
+  };
+
+  popupConstrDraw.on("drawstart", onDrawStart);
+  popupConstrDraw.on("drawend", limpiarDraw);
+  popupConstrDraw.on("drawabort", limpiarDraw);
+
+  popupConstrDrawSnapCleanup = () => {
+    popupConstrMap.un("pointermove", onPointerMove);
+    popupConstrMap.un("click", onClick);
+    popupConstrDraw.un("drawstart", onDrawStart);
+    popupConstrDraw.un("drawend", limpiarDraw);
+    popupConstrDraw.un("drawabort", limpiarDraw);
+  };
+}
+
+function popupConstrSnapCoordsDibujo(coordinates, tipo) {
+  if (!coordinates?.length || !popupConstrSnapActivo()) return;
+  if (tipo === "LineString") {
+    for (let i = 0; i < coordinates.length; i++) {
+      coordinates[i] = popupConstrSnapCoordenada(coordinates[i]);
+    }
+  } else if (tipo === "Polygon") {
+    coordinates.forEach(ring => {
+      for (let i = 0; i < ring.length; i++) {
+        ring[i] = popupConstrSnapCoordenada(ring[i]);
+      }
+    });
+  }
+}
+
+function popupConstrCrearGeometryFunction(tipo) {
+  return function(coordinates, geometry) {
+    popupConstrSnapCoordsDibujo(coordinates, tipo);
+    if (tipo === "LineString") {
+      if (!geometry) geometry = new ol.geom.LineString(coordinates);
+      else geometry.setCoordinates(coordinates);
+    } else if (tipo === "Polygon") {
+      if (!geometry) geometry = new ol.geom.Polygon(coordinates);
+      else geometry.setCoordinates(coordinates);
+    }
+    return geometry;
+  };
+}
+
+async function popupConstrCargarPrediosSnapCercanos() {
+  if (!popupConstrMap || !popupConstrCapas?.prediosSnapVector) return;
+  const src = popupConstrCapas.prediosSnapVector.getSource();
+  src.clear();
+
+  const extent = popupConstrMap.getView().calculateExtent(popupConstrMap.getSize());
+  if (!extent || extent.some(v => !Number.isFinite(v))) return;
+
+  const center = ol.extent.getCenter(extent);
+  const [lon, lat] = ol.proj.toLonLat(center);
+
+  let radio = 120;
+  if (popupConstrProj4Ready || asegurarProj4Utm11()) {
+    const c1 = ol.proj.transform([extent[0], extent[1]], "EPSG:3857", "EPSG:32611");
+    const c2 = ol.proj.transform([extent[2], extent[3]], "EPSG:3857", "EPSG:32611");
+    const ancho = Math.abs(c2[0] - c1[0]);
+    const alto = Math.abs(c2[1] - c1[1]);
+    radio = Math.max(60, Math.min(500, Math.max(ancho, alto) * 0.75));
+  }
+
+  const fmt4326 = new ol.format.GeoJSON({
+    dataProjection: "EPSG:4326",
+    featureProjection: "EPSG:3857"
+  });
+  const fmt3857 = new ol.format.GeoJSON({
+    dataProjection: "EPSG:3857",
+    featureProjection: "EPSG:3857"
+  });
+
+  // 1) API catastro (más confiable que WFS)
+  try {
+    if (typeof API !== "undefined" && typeof authHeaders === "function") {
+      const qs = new URLSearchParams({
+        lon: String(lon),
+        lat: String(lat),
+        radio: String(Math.round(radio))
+      });
+      const r = await fetch(`${API}/predios/cercanos?${qs}`, {
+        headers: authHeaders(),
+        cache: "no-store"
+      });
+      if (r.ok) {
+        const geojson = await r.json();
+        if (geojson?.features?.length) {
+          src.addFeatures(fmt4326.readFeatures(geojson));
+          return;
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 2) WFS GeoServer (respaldo)
+  const pad = ol.extent.getWidth(extent) * 0.25;
+  const minx = extent[0] - pad;
+  const miny = extent[1] - pad;
+  const maxx = extent[2] + pad;
+  const maxy = extent[3] + pad;
+  const urls = [
+    `https://fcnarqnodo.hopto.org/geoserver/catastro_bc/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=catastro_bc:predios_oficial&outputFormat=application/json&srsName=EPSG:3857&count=150&bbox=${minx},${miny},${maxx},${maxy},EPSG:3857`,
+    `https://fcnarqnodo.hopto.org/geoserver/catastro_bc/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=catastro_bc:predios_oficial&outputFormat=application/json&srsName=EPSG:3857&maxFeatures=150&BBOX=${minx},${miny},${maxx},${maxy},EPSG:3857`
+  ];
+
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) continue;
+      const geojson = await r.json();
+      if (!geojson?.features?.length) continue;
+      src.addFeatures(fmt3857.readFeatures(geojson));
+      return;
+    } catch (e) {}
+  }
+}
+
+function popupConstrEsperarVistaMapa(msFallback) {
+  return new Promise(resolve => {
+    if (!popupConstrMap) return resolve();
+    let listo = false;
+    let key = null;
+    const terminar = () => {
+      if (listo) return;
+      listo = true;
+      if (key) ol.Observable.unByKey(key);
+      clearTimeout(tid);
+      resolve();
+    };
+    key = popupConstrMap.on("moveend", terminar);
+    const tid = setTimeout(terminar, msFallback || 500);
+  });
+}
+
+function popupConstrProgramarRecargaSnap() {
+  clearTimeout(popupConstrSnapReloadTimer);
+  popupConstrSnapReloadTimer = setTimeout(() => {
+    popupConstrCargarPrediosSnapCercanos();
+  }, 350);
+}
+
+function popupConstrEnlazarRecargaSnapVista() {
+  if (!popupConstrMap) return;
+  popupConstrMap.on("moveend", popupConstrProgramarRecargaSnap);
+}
+
+function popupConstrQuitarInteraccionDibujo() {
+  popupConstrDesinstalarSnapEnVivo();
+  if (popupConstrDraw && popupConstrMap) {
+    popupConstrMap.removeInteraction(popupConstrDraw);
+    popupConstrDraw = null;
+  }
+}
+
+function popupConstrTogglePanelMedicion() {
+  const panel = document.getElementById("popupConstrPanelMedicion");
+  const chk = document.getElementById("popupConstrChkPanelMedicion");
+  if (!panel || !chk) return;
+  popupConstrPanelMedicionVisible = chk.checked;
+  panel.classList.toggle("oculto", !popupConstrPanelMedicionVisible);
+}
+
+function popupConstrAplicarEstiloMedicion() {
+  if (!popupConstrCapas) return;
+  popupConstrCapas.medicionLibre.changed();
+  popupConstrCapas.medicionEtiquetas.changed();
+  popupConstrMap?.render();
+}
+
+function popupConstrActualizarBotonMedicionVisible() {
+  const btn = document.getElementById("popupConstrBtnOcultarMedicion");
+  if (!btn) return;
+  btn.textContent = popupConstrMedicionLibreVisible ? "👁 Ocultar medición" : "👁 Mostrar medición";
+  btn.classList.toggle("popup-construcciones-tool-active", !popupConstrMedicionLibreVisible);
+}
+
+function popupConstrCalcularMedidasPredio(geom32611) {
+  if (!popupConstrCapas || !geom32611) return;
+  const src = popupConstrCapas.medidasPredio.getSource();
+  src.clear();
+  const poly = popupConstrGetMainPolygon(geom32611);
+  if (!poly) return;
+
+  let coordsUtm = poly.getCoordinates()[0].slice();
+  if (coordsUtm.length > 1 &&
+    coordsUtm[0][0] === coordsUtm[coordsUtm.length - 1][0] &&
+    coordsUtm[0][1] === coordsUtm[coordsUtm.length - 1][1]) {
+    coordsUtm = coordsUtm.slice(0, -1);
+  }
+
+  const coords3857 = coordsUtm.map(c => ol.proj.transform(c, "EPSG:32611", "EPSG:3857"));
+
+  for (let i = 0; i < coordsUtm.length; i++) {
+    const j = (i + 1) % coordsUtm.length;
+    const dx = coordsUtm[j][0] - coordsUtm[i][0];
+    const dy = coordsUtm[j][1] - coordsUtm[i][1];
+    const d = Math.sqrt(dx * dx + dy * dy);
+    src.addFeature(new ol.Feature({
+      geometry: new ol.geom.LineString([coords3857[i], coords3857[j]]),
+      texto: `${d.toFixed(2)} m`
+    }));
+  }
+}
+
+function popupConstrCoordsAnillo(ring) {
+  if (!ring?.length) return [];
+  let coords = ring.slice();
+  if (coords.length > 1 &&
+    coords[0][0] === coords[coords.length - 1][0] &&
+    coords[0][1] === coords[coords.length - 1][1]) {
+    coords = coords.slice(0, -1);
+  }
+  return coords;
+}
+
+function popupConstrCoordsVerticesPredio(geom3857) {
+  const unicos = [];
+  const vistos = new Set();
+  if (!geom3857) return unicos;
+
+  const agregar = coords => {
+    coords.forEach(c => {
+      const key = popupConstrSnapClaveVertice(c);
+      if (vistos.has(key)) return;
+      vistos.add(key);
+      unicos.push(c);
+    });
+  };
+
+  const tipo = geom3857.getType();
+  if (tipo === "Polygon") {
+    geom3857.getCoordinates().forEach(ring => agregar(popupConstrCoordsAnillo(ring)));
+  } else if (tipo === "MultiPolygon") {
+    geom3857.getPolygons().forEach(poly => {
+      poly.getCoordinates().forEach(ring => agregar(popupConstrCoordsAnillo(ring)));
+    });
+  } else {
+    const poly = popupConstrGetMainPolygon(geom3857);
+    if (poly) agregar(popupConstrCoordsAnillo(poly.getCoordinates()[0]));
+  }
+  return unicos;
+}
+
+function popupConstrActualizarVertices(geom3857) {
+  if (!popupConstrCapas) return;
+  const src = popupConstrCapas.vertices.getSource();
+  src.clear();
+  if (!geom3857 || !popupConstrMostrarVertices) return;
+
+  const coords = popupConstrCoordsVerticesPredio(geom3857);
+  coords.forEach((c, i) => {
+    src.addFeature(new ol.Feature({
+      geometry: new ol.geom.Point(c),
+      etiqueta: `P${i + 1}`
+    }));
+  });
+}
+
+function popupConstrCalcularCuadro(geom32611) {
+  const poly = popupConstrGetMainPolygon(geom32611);
+  if (!poly) return { filas: [], area: 0, perimetro: 0 };
+
+  let coordsUtm = poly.getCoordinates()[0].slice();
+  if (coordsUtm.length > 1 &&
+    coordsUtm[0][0] === coordsUtm[coordsUtm.length - 1][0] &&
+    coordsUtm[0][1] === coordsUtm[coordsUtm.length - 1][1]) {
+    coordsUtm = coordsUtm.slice(0, -1);
+  }
+
+  const utm = coordsUtm.slice();
+  utm.push(utm[0]);
+
+  let area = 0;
+  for (let i = 0; i < utm.length - 1; i++) {
+    area += utm[i][0] * utm[i + 1][1] - utm[i + 1][0] * utm[i][1];
+  }
+  area = Math.abs(area) / 2;
+
+  const filas = [];
+  let perimetro = 0;
+
+  for (let i = 0; i < coordsUtm.length; i++) {
+    const n = i + 1;
+    const sig = (i + 1 > coordsUtm.length - 1 ? 1 : i + 2);
+    const p1 = utm[i];
+    const p2 = utm[i + 1];
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    perimetro += dist;
+    const ang = (popupConstrRad2deg(Math.atan2(dx, dy)) + 360) % 360;
+    filas.push({ n, sig, dist, ang, este: p1[0], norte: p1[1] });
+  }
+
+  return { filas, area, perimetro };
+}
+
+function popupConstrHtmlCuadro(clave, cuadro, p) {
+  const supDoc = typeof formatoNumero === "function" ? formatoNumero(p?.sup_documental) : p?.sup_documental;
+  const supConst = typeof formatoNumero === "function" ? formatoNumero(p?.sup_const) : p?.sup_const;
+  const tieneConst = p?.tiene_construccion === true || Number(p?.sup_const || 0) > 0;
+
+  const filasHtml = (cuadro.filas || []).map(f => `
+    <tr>
+      <td>P${f.n}</td>
+      <td>P${f.n} - P${f.sig}</td>
+      <td>${f.dist.toFixed(2)}</td>
+      <td>${popupConstrDms(f.ang)}</td>
+      <td>${popupConstrFormatUtm(f.este)}</td>
+      <td>${popupConstrFormatUtm(f.norte)}</td>
+    </tr>
+  `).join("");
+
+  return `
+    <div class="popup-construcciones-resumen">
+      <div><span>Sup. documental</span><b>${supDoc ? supDoc + " m²" : "—"}</b></div>
+      <div><span>Sup. construcción (padrón)</span><b>${supConst ? supConst + " m²" : "—"}</b></div>
+      <div><span>Área UTM calculada</span><b>${cuadro.area ? cuadro.area.toFixed(2) + " m²" : "—"}</b></div>
+      <div><span>Perímetro UTM</span><b>${cuadro.perimetro ? cuadro.perimetro.toFixed(2) + " m" : "—"}</b></div>
+      <div><span>Construcción registrada</span><b>${tieneConst ? "Sí" : "No"}</b></div>
+    </div>
+    <div class="popup-construcciones-cuadro-scroll">
+      <table class="popup-construcciones-cuadro">
+        <thead>
+          <tr>
+            <th>Vértice</th>
+            <th>Lado</th>
+            <th>Dist. (m)</th>
+            <th>Ángulo</th>
+            <th>Este</th>
+            <th>Norte</th>
+          </tr>
+        </thead>
+        <tbody>${filasHtml || `<tr><td colspan="6">Sin geometría para cuadro de construcción.</td></tr>`}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="6">
+              Área: ${cuadro.area.toFixed(2)} m² — Perímetro: ${cuadro.perimetro.toFixed(2)} m · EPSG:32611 (UTM 11N)
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div id="popupConstrCapaBody" class="popup-construcciones-capa-wrap">
+      <div class="popup-construcciones-vacio">Consultando construcciones cartográficas…</div>
+    </div>
+  `;
+}
+
+function popupConstrFormatTipo(tipo) {
+  const t = String(tipo || "").trim();
+  if (!t) return "—";
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+}
+
+function popupConstrHtmlCapaConstrucciones(data) {
+  const lista = data?.construcciones || [];
+  if (!lista.length) {
+    return `
+      <div class="popup-construcciones-capa-head">Construcciones de la clave (capa cartográfica)</div>
+      <div class="popup-construcciones-vacio">No se encontraron construcciones en la capa para esta clave.</div>
+    `;
+  }
+
+  if (lista.length === 1) {
+    const c = lista[0];
+    const sup = c.suphor != null ? Number(c.suphor).toFixed(3) : "—";
+    const per = c.perimetro != null ? Number(c.perimetro).toFixed(4) : "—";
+    return `
+      <div class="popup-construcciones-capa-head">Construcciones de la clave (capa cartográfica)</div>
+      <div class="popup-construcciones-capa-resumen">
+        <div><span>Niveles</span><b>${c.niveles ?? "—"}</b></div>
+        <div><span>Superficie horizontal</span><b>${sup !== "—" ? sup + " m²" : "—"}</b></div>
+        <div><span>Tipo de construcción</span><b>${popupConstrFormatTipo(c.tipo)}</b></div>
+        <div><span>Clave construcción</span><b>${c.claveconst ?? "—"}</b></div>
+        <div><span>Perímetro</span><b>${per !== "—" ? per + " m" : "—"}</b></div>
+        <div><span>Colonia</span><b>${escapeHtml(String(c.colonia || "—"))}</b></div>
+      </div>
+    `;
+  }
+
+  const filas = lista.map(c => {
+    const sup = c.suphor != null ? Number(c.suphor).toFixed(3) : "—";
+    const per = c.perimetro != null ? Number(c.perimetro).toFixed(4) : "—";
+    return `
+      <tr>
+        <td>${c.claveconst ?? "—"}</td>
+        <td>${c.niveles ?? "—"}</td>
+        <td>${sup !== "—" ? sup : "—"}</td>
+        <td>${popupConstrFormatTipo(c.tipo)}</td>
+        <td>${per !== "—" ? per : "—"}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <div class="popup-construcciones-capa-head">Construcciones de la clave (capa cartográfica) — ${lista.length} registros</div>
+    <div class="popup-construcciones-capa-scroll">
+      <table class="popup-construcciones-capa-tabla">
+        <thead>
+          <tr>
+            <th>Clave const.</th>
+            <th>Niveles</th>
+            <th>Sup. hor. (m²)</th>
+            <th>Tipo</th>
+            <th>Perímetro (m)</th>
+          </tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function popupConstrFetchConstruccionesWfs(clave) {
+  const cql = encodeURIComponent(`clavecatas='${clave}' OR claveorig='${clave}'`);
+  const url = `https://fcnarqnodo.hopto.org/geoserver/geonode/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=geonode:construccionesmxli&outputFormat=application/json&srsName=EPSG:3857&CQL_FILTER=${cql}&maxFeatures=100`;
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error("WFS construcciones no disponible");
+  const geojson = await r.json();
+  const construcciones = (geojson.features || []).map(f => {
+    const p = f.properties || {};
+    return {
+      fid: p.fid,
+      clavecatas: p.clavecatas,
+      claveconst: p.claveconst,
+      claveorig: p.claveorig,
+      niveles: p.niveles,
+      suphor: p.suphor != null ? Number(p.suphor) : null,
+      colonia: p.colonia,
+      perimetro: p.perimetro != null ? Number(p.perimetro) : null,
+      tipo: p.tipo
+    };
+  });
+  return { clave_catastral: clave, total: construcciones.length, construcciones, _geojson: geojson };
+}
+
+async function popupConstrFetchConstrucciones(clave) {
+  if (!clave) return null;
+  try {
+    if (typeof API !== "undefined" && typeof authHeaders === "function") {
+      const r = await fetch(`${API}/predios/${encodeURIComponent(clave)}/construcciones`, {
+        headers: authHeaders(),
+        cache: "no-store"
+      });
+      if (r.ok) return await r.json();
+    }
+  } catch (e) {}
+  return popupConstrFetchConstruccionesWfs(clave);
+}
+
+async function popupConstrPintarVectorConstrucciones(clave, geojsonPrecargado) {
+  if (!popupConstrCapas?.construccionesVector) return;
+  const src = popupConstrCapas.construccionesVector.getSource();
+  src.clear();
+  let geojson = geojsonPrecargado;
+  if (!geojson) {
+    try {
+      const data = await popupConstrFetchConstruccionesWfs(clave);
+      geojson = data._geojson;
+    } catch (e) {
+      return;
+    }
+  }
+  if (!geojson?.features?.length) return;
+  const fmt = new ol.format.GeoJSON();
+  const feats = fmt.readFeatures(geojson, {
+    dataProjection: "EPSG:3857",
+    featureProjection: "EPSG:3857"
+  });
+  src.addFeatures(feats);
+}
+
+async function popupConstrCargarCapaConstrucciones(clave) {
+  const el = document.getElementById("popupConstrCapaBody");
+  if (!el || !clave) return;
+
+  try {
+    const data = await popupConstrFetchConstrucciones(clave);
+    el.innerHTML = popupConstrHtmlCapaConstrucciones(data);
+
+    if (data?.total > 0) {
+      const chk = document.getElementById("popupConstrChkConstrucciones");
+      if (chk && !chk.checked) {
+        chk.checked = true;
+        popupConstrToggleCapa("construcciones");
+      }
+      await popupConstrPintarVectorConstrucciones(clave, data._geojson);
+    }
+  } catch (e) {
+    el.innerHTML = `
+      <div class="popup-construcciones-capa-head">Construcciones de la clave (capa cartográfica)</div>
+      <div class="popup-construcciones-vacio">No fue posible consultar la capa de construcciones.</div>
+    `;
+  }
+
+  await popupConstrEsperarVistaMapa(80);
+  await popupConstrCargarPrediosSnapCercanos();
+  popupConstrMap?.render();
+}
+
+async function popupConstrActivarDibujo(tipo) {
+  if (!popupConstrMap || !popupConstrCapas) return;
+  popupConstrQuitarInteraccionDibujo();
+
+  await popupConstrEsperarVistaMapa(80);
+  await popupConstrCargarPrediosSnapCercanos();
+
+  popupConstrDraw = new ol.interaction.Draw({
+    source: popupConstrCapas.medicionLibre.getSource(),
+    type: tipo,
+    geometryFunction: popupConstrCrearGeometryFunction(tipo)
+  });
+  popupConstrMap.addInteraction(popupConstrDraw);
+  popupConstrInstalarSnapEnVivo();
+
+  document.querySelectorAll(".popup-construcciones-tool-draw").forEach(btn => {
+    btn.classList.toggle("popup-construcciones-tool-active", btn.dataset.drawType === tipo);
+  });
+
+  popupConstrDraw.on("drawend", function(evt) {
+    const geom3857 = evt.feature.getGeometry();
+    if (popupConstrSnapActivo() && geom3857) {
+      const tipoGeom = geom3857.getType();
+      if (tipoGeom === "LineString") {
+        geom3857.setCoordinates(geom3857.getCoordinates().map(c => popupConstrSnapCoordenada(c)));
+      } else if (tipoGeom === "Polygon") {
+        geom3857.setCoordinates(
+          geom3857.getCoordinates().map(ring => ring.map(c => popupConstrSnapCoordenada(c)))
+        );
+      }
+    }
+    const geom32611 = geom3857.clone();
+    geom32611.transform("EPSG:3857", "EPSG:32611");
+
+    if (geom32611.getType() === "LineString") {
+      const coords = geom32611.getCoordinates();
+      for (let i = 0; i < coords.length - 1; i++) {
+        const p1 = coords[i];
+        const p2 = coords[i + 1];
+        const dx = p2[0] - p1[0];
+        const dy = p2[1] - p1[1];
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const seg3857 = new ol.geom.LineString([
+          ol.proj.transform(p1, "EPSG:32611", "EPSG:3857"),
+          ol.proj.transform(p2, "EPSG:32611", "EPSG:3857")
+        ]);
+        popupConstrCapas.medicionEtiquetas.getSource().addFeature(new ol.Feature({
+          geometry: seg3857,
+          texto: `${d.toFixed(2)} m`,
+          placement: "line"
+        }));
+      }
+    } else if (geom32611.getType() === "Polygon") {
+      const ring = geom32611.getCoordinates()[0];
+      for (let i = 0; i < ring.length - 1; i++) {
+        const p1 = ring[i];
+        const p2 = ring[i + 1];
+        const dx = p2[0] - p1[0];
+        const dy = p2[1] - p1[1];
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const seg3857 = new ol.geom.LineString([
+          ol.proj.transform(p1, "EPSG:32611", "EPSG:3857"),
+          ol.proj.transform(p2, "EPSG:32611", "EPSG:3857")
+        ]);
+        popupConstrCapas.medicionEtiquetas.getSource().addFeature(new ol.Feature({
+          geometry: seg3857,
+          texto: `${d.toFixed(2)} m`,
+          placement: "line"
+        }));
+      }
+      let per = 0;
+      for (let i = 0; i < ring.length - 1; i++) {
+        const dx = ring[i + 1][0] - ring[i][0];
+        const dy = ring[i + 1][1] - ring[i][1];
+        per += Math.sqrt(dx * dx + dy * dy);
+      }
+      const area = Math.abs(geom32611.getArea());
+      popupConstrCapas.medicionEtiquetas.getSource().addFeature(new ol.Feature({
+        geometry: geom3857.getInteriorPoint(),
+        texto: `Área: ${area.toFixed(2)} m²\nPerím.: ${per.toFixed(2)} m`,
+        placement: "point"
+      }));
+    }
+    popupConstrAplicarEstiloMedicion();
+  });
+}
+
+function popupConstrToggleMedicionLibre() {
+  if (!popupConstrCapas) return;
+  popupConstrMedicionLibreVisible = !popupConstrMedicionLibreVisible;
+  popupConstrCapas.medicionLibre.setVisible(popupConstrMedicionLibreVisible);
+  popupConstrCapas.medicionEtiquetas.setVisible(popupConstrMedicionLibreVisible);
+  const chk = document.getElementById("popupConstrChkMedicionLibre");
+  if (chk) chk.checked = popupConstrMedicionLibreVisible;
+  popupConstrActualizarBotonMedicionVisible();
+  popupConstrMap?.render();
+}
+
+function popupConstrAjustarMedicion(delta) {
+  if (delta < 0) {
+    popupConstrMedicionOpacidad = Math.max(0.35, +(popupConstrMedicionOpacidad - 0.15).toFixed(2));
+    popupConstrMedicionEscala = Math.max(0.65, +(popupConstrMedicionEscala - 0.1).toFixed(2));
+  } else {
+    popupConstrMedicionOpacidad = Math.min(1, +(popupConstrMedicionOpacidad + 0.15).toFixed(2));
+    popupConstrMedicionEscala = Math.min(1.45, +(popupConstrMedicionEscala + 0.1).toFixed(2));
+  }
+  popupConstrAplicarEstiloMedicion();
+  const bar = document.getElementById("popupConstrMedicionNivel");
+  if (bar) {
+    bar.textContent = `${Math.round(popupConstrMedicionOpacidad * 100)}%`;
+  }
+}
+
+function popupConstrSetBaseLayer(valor) {
+  if (!popupConstrCapas) return;
+  ["googleHybrid", "googleSat", "esri", "osm"].forEach(id => {
+    if (popupConstrCapas[id]) popupConstrCapas[id].setVisible(id === valor);
+  });
+  popupConstrMap?.render();
+}
+
+function popupConstrToggleCapa(tipo) {
+  if (!popupConstrCapas) return;
+  if (tipo === "predios") {
+    popupConstrCapas.prediosWms.setVisible(document.getElementById("popupConstrChkPredios")?.checked !== false);
+  } else if (tipo === "colonias") {
+    popupConstrCapas.coloniasWms.setVisible(document.getElementById("popupConstrChkColonias")?.checked === true);
+  } else if (tipo === "construcciones") {
+    popupConstrCapas.construccionesWms.setVisible(document.getElementById("popupConstrChkConstrucciones")?.checked === true);
+  } else if (tipo === "medidas") {
+    const visible = document.getElementById("popupConstrChkMedidas")?.checked !== false;
+    popupConstrCapas.medidasPredio.setVisible(visible);
+  } else if (tipo === "medicionLibre") {
+    const visible = document.getElementById("popupConstrChkMedicionLibre")?.checked !== false;
+    popupConstrMedicionLibreVisible = visible;
+    popupConstrCapas.medicionLibre.setVisible(visible);
+    popupConstrCapas.medicionEtiquetas.setVisible(visible);
+    popupConstrActualizarBotonMedicionVisible();
+  } else if (tipo === "vertices") {
+    popupConstrMostrarVertices = document.getElementById("popupConstrChkVertices")?.checked !== false;
+    popupConstrCapas.vertices.setVisible(popupConstrMostrarVertices);
+    if (popupConstrMostrarVertices && popupConstrGeom3857) {
+      popupConstrActualizarVertices(popupConstrGeom3857);
+    } else {
+      popupConstrCapas.vertices.getSource().clear();
+    }
+  }
+  popupConstrMap?.render();
+}
+
+function popupConstrBorrarMedicion() {
+  if (!popupConstrCapas) return;
+  popupConstrCapas.medicionLibre.getSource().clear();
+  popupConstrCapas.medicionEtiquetas.getSource().clear();
+  popupConstrQuitarInteraccionDibujo();
+  document.querySelectorAll(".popup-construcciones-tool-draw").forEach(btn => {
+    btn.classList.remove("popup-construcciones-tool-active");
+  });
+  popupConstrMedicionLibreVisible = true;
+  popupConstrCapas.medicionLibre.setVisible(true);
+  popupConstrCapas.medicionEtiquetas.setVisible(true);
+  const chkLibre = document.getElementById("popupConstrChkMedicionLibre");
+  if (chkLibre) chkLibre.checked = true;
+  popupConstrActualizarBotonMedicionVisible();
+  popupConstrMap?.render();
+}
+
+function popupConstrDeshacerPunto() {
+  if (popupConstrDraw) popupConstrDraw.removeLastPoint();
+}
+
+function popupConstrToggleCapasMenu() {
+  document.getElementById("popupConstrCapasMenu")?.classList.toggle("oculto");
+}
+
+function destruirPopupConstruccionesMedicion() {
+  popupConstrQuitarInteraccionDibujo();
+  clearTimeout(popupConstrSnapReloadTimer);
+  popupConstrSnapReloadTimer = null;
+  if (popupConstrMap) {
+    popupConstrMap.setTarget(null);
+    popupConstrMap = null;
+  }
+  popupConstrCapas = null;
+  popupConstrGeom3857 = null;
+  popupConstrGeom32611 = null;
+  popupConstrClaveActual = "";
+  popupConstrMedicionLibreVisible = true;
+  popupConstrMedicionOpacidad = 1;
+  popupConstrMedicionEscala = 1;
+}
+
+async function cargarGeometriaEnMapaConstrucciones(clave, p) {
+  if (!popupConstrMap || !popupConstrCapas) return;
+
+  const geom3857 = typeof resolverGeometriaPredioPopup === "function"
+    ? await resolverGeometriaPredioPopup(clave)
+    : null;
+
+  popupConstrCapas.predioVector.getSource().clear();
+  popupConstrCapas.prediosSnapVector?.getSource()?.clear();
+  popupConstrCapas.construccionesVector?.getSource()?.clear();
+  popupConstrCapas.medidasPredio.getSource().clear();
+  popupConstrCapas.vertices.getSource().clear();
+  popupConstrCapas.medicionLibre.getSource().clear();
+  popupConstrCapas.medicionEtiquetas.getSource().clear();
+
+  if (!geom3857) {
+    popupConstrGeom3857 = null;
+    popupConstrGeom32611 = null;
+    const el = document.getElementById("popupConstrCuadroBody");
+    if (el) {
+      el.innerHTML = `
+        <div class="popup-construcciones-vacio">El predio no tiene geometría cartográfica para medición.</div>
+        <div id="popupConstrCapaBody" class="popup-construcciones-capa-wrap">
+          <div class="popup-construcciones-vacio">Consultando construcciones cartográficas…</div>
+        </div>
+      `;
+    }
+    await popupConstrCargarCapaConstrucciones(clave);
+    return;
+  }
+
+  popupConstrGeom3857 = geom3857.clone ? geom3857.clone() : geom3857;
+  popupConstrGeom32611 = asegurarProj4Utm11()
+    ? popupConstrTransformGeom(popupConstrGeom3857, "EPSG:3857", "EPSG:32611")
+    : null;
+
+  if (popupConstrGeom3857) {
+    const geomPredio = popupConstrGeom3857.clone ? popupConstrGeom3857.clone() : popupConstrGeom3857;
+    popupConstrCapas.predioVector.getSource().addFeature(new ol.Feature({ geometry: geomPredio }));
+    const ext = geomPredio.getExtent ? geomPredio.getExtent() : null;
+    if (ext) {
+      popupConstrMap.getView().fit(ext, { padding: [40, 40, 40, 40], maxZoom: 20, duration: 400 });
+      await popupConstrEsperarVistaMapa(500);
+    }
+  }
+
+  if (popupConstrGeom32611) {
+    popupConstrCalcularMedidasPredio(popupConstrGeom32611);
+    const cuadro = popupConstrCalcularCuadro(popupConstrGeom32611);
+    const el = document.getElementById("popupConstrCuadroBody");
+    if (el) el.innerHTML = popupConstrHtmlCuadro(clave, cuadro, p);
+  }
+
+  popupConstrActualizarVertices(popupConstrGeom3857);
+  await popupConstrCargarCapaConstrucciones(clave);
+  setTimeout(() => popupConstrMap?.updateSize(), 120);
+}
+
+function inicializarMapaConstrucciones() {
+  const target = document.getElementById("popupConstruccionesMap");
+  if (!target) return;
+
+  asegurarProj4Utm11();
+  popupConstrCapas = popupConstrCrearCapasMapa();
+
+  popupConstrMap = new ol.Map({
+    target: "popupConstruccionesMap",
+    layers: [
+      popupConstrCapas.googleHybrid,
+      popupConstrCapas.googleSat,
+      popupConstrCapas.esri,
+      popupConstrCapas.osm,
+      popupConstrCapas.coloniasWms,
+      popupConstrCapas.prediosWms,
+      popupConstrCapas.construccionesWms,
+      popupConstrCapas.construccionesVector,
+      popupConstrCapas.prediosSnapVector,
+      popupConstrCapas.predioVector,
+      popupConstrCapas.medidasPredio,
+      popupConstrCapas.vertices,
+      popupConstrCapas.medicionLibre,
+      popupConstrCapas.medicionEtiquetas
+    ],
+    controls: (function() {
+      try {
+        if (ol.control?.defaults?.defaults) {
+          return ol.control.defaults.defaults({ zoom: true, rotate: false, attribution: false });
+        }
+      } catch (e) {}
+      return [new ol.control.Zoom()];
+    })(),
+    view: new ol.View({
+      projection: "EPSG:3857",
+      center: ol.proj.fromLonLat([-115.4683, 32.6245]),
+      zoom: 12
+    })
+  });
+
+  popupConstrMap.on("pointermove", function(evt) {
+    const c = ol.proj.toLonLat(evt.coordinate);
+    const bar = document.getElementById("popupConstrCoordBar");
+    if (bar) bar.textContent = `Lon: ${c[0].toFixed(6)} | Lat: ${c[1].toFixed(6)}`;
+  });
+
+  popupConstrEnlazarRecargaSnapVista();
+}
+
+async function pintarPopupTabConstrucciones(p) {
+  const panel = document.getElementById("popupTabConstrucciones");
+  if (!panel) return;
+
+  destruirPopupConstruccionesMedicion();
+
+  const clave = String(p?.clave_catastral || claveSeleccionadaActual || "").trim().toUpperCase();
+  popupConstrClaveActual = clave;
+  popupConstrMostrarVertices = true;
+
+  panel.innerHTML = `
+    <div class="popup-construcciones-layout">
+      <div class="popup-construcciones-cuadro-panel">
+        <div class="popup-construcciones-cuadro-head">
+          <strong>Cuadro de construcción — ${escapeHtml(clave || "—")}</strong>
+        </div>
+        <div id="popupConstrCuadroBody" class="popup-construcciones-cuadro-body">
+          <div class="popup-construcciones-vacio">Cargando geometría…</div>
+        </div>
+      </div>
+      <div class="popup-construcciones-mapa-panel">
+        <div class="popup-construcciones-mapa-head">
+          <span>Medición cartográfica</span>
+          <div class="popup-construcciones-mapa-head-actions">
+            <label class="popup-construcciones-head-toggle" title="Mostrar u ocultar cuadro de medición">
+              <input type="checkbox" id="popupConstrChkPanelMedicion" checked onchange="popupConstrTogglePanelMedicion()">
+              <span>Medición</span>
+            </label>
+            <button type="button" class="popup-btn-capas" onclick="popupConstrToggleCapasMenu()">Capas</button>
+          </div>
+        </div>
+        <div class="popup-construcciones-mapa-wrap">
+          <div id="popupConstruccionesMap" class="popup-construcciones-map"></div>
+          <div id="popupConstrPanelMedicion" class="popup-construcciones-medicion">
+            <div class="popup-construcciones-medicion-title">Medición</div>
+            <label class="popup-construcciones-snap">
+              <input type="checkbox" id="popupConstrChkSnap" checked> Snap a predios/vértices
+            </label>
+            <button type="button" class="popup-construcciones-tool popup-construcciones-tool-draw" data-draw-type="LineString" onclick="popupConstrActivarDibujo('LineString')">📏 Línea</button>
+            <button type="button" class="popup-construcciones-tool popup-construcciones-tool-draw" data-draw-type="Polygon" onclick="popupConstrActivarDibujo('Polygon')">📐 Polígono</button>
+            <button type="button" class="popup-construcciones-tool" onclick="popupConstrDeshacerPunto()">↶ Deshacer punto</button>
+            <button type="button" class="popup-construcciones-tool" id="popupConstrBtnOcultarMedicion" onclick="popupConstrToggleMedicionLibre()">👁 Ocultar medición</button>
+            <div class="popup-construcciones-medicion-ajuste">
+              <button type="button" class="popup-construcciones-tool popup-construcciones-tool-mini" onclick="popupConstrAjustarMedicion(-1)" title="Reducir tamaño/opacidad">➖</button>
+              <span id="popupConstrMedicionNivel">100%</span>
+              <button type="button" class="popup-construcciones-tool popup-construcciones-tool-mini" onclick="popupConstrAjustarMedicion(1)" title="Aumentar tamaño/opacidad">➕</button>
+            </div>
+            <button type="button" class="popup-construcciones-tool popup-construcciones-tool-danger" onclick="popupConstrBorrarMedicion()">🗑 Quitar medición</button>
+          </div>
+          <div id="popupConstrCapasMenu" class="popup-capas-menu popup-constr-capas oculto">
+            <div class="popup-capas-seccion">
+              <strong>Capas</strong>
+              <label><input type="checkbox" id="popupConstrChkPredios" checked onchange="popupConstrToggleCapa('predios')"> Predios</label>
+              <label><input type="checkbox" id="popupConstrChkColonias" onchange="popupConstrToggleCapa('colonias')"> Colonias</label>
+              <label><input type="checkbox" id="popupConstrChkConstrucciones" onchange="popupConstrToggleCapa('construcciones')"> Construcciones</label>
+              <label><input type="checkbox" id="popupConstrChkMedidas" checked onchange="popupConstrToggleCapa('medidas')"> Medidas del predio</label>
+              <label><input type="checkbox" id="popupConstrChkMedicionLibre" checked onchange="popupConstrToggleCapa('medicionLibre')"> Medición libre</label>
+              <label><input type="checkbox" id="popupConstrChkVertices" checked onchange="popupConstrToggleCapa('vertices')"> Vértices</label>
+            </div>
+            <div class="popup-capas-seccion">
+              <strong>Base mapas</strong>
+              <label><input type="radio" name="popupConstrBase" value="googleHybrid" checked onchange="popupConstrSetBaseLayer(this.value)"> Google Satellite &amp; Roads</label>
+              <label><input type="radio" name="popupConstrBase" value="googleSat" onchange="popupConstrSetBaseLayer(this.value)"> Google Satellite</label>
+              <label><input type="radio" name="popupConstrBase" value="esri" onchange="popupConstrSetBaseLayer(this.value)"> ESRI Satellite</label>
+              <label><input type="radio" name="popupConstrBase" value="osm" onchange="popupConstrSetBaseLayer(this.value)"> OpenStreetMap</label>
+            </div>
+          </div>
+          <div id="popupConstrCoordBar" class="popup-construcciones-coord">Lon: — | Lat: —</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  inicializarMapaConstrucciones();
+  await cargarGeometriaEnMapaConstrucciones(clave, p);
+}
+
+window.pintarPopupTabConstrucciones = pintarPopupTabConstrucciones;
+window.destruirPopupConstruccionesMedicion = destruirPopupConstruccionesMedicion;
+window.popupConstrActivarDibujo = popupConstrActivarDibujo;
+window.popupConstrDeshacerPunto = popupConstrDeshacerPunto;
+window.popupConstrBorrarMedicion = popupConstrBorrarMedicion;
+window.popupConstrToggleMedicionLibre = popupConstrToggleMedicionLibre;
+window.popupConstrAjustarMedicion = popupConstrAjustarMedicion;
+window.popupConstrTogglePanelMedicion = popupConstrTogglePanelMedicion;
+window.popupConstrToggleCapa = popupConstrToggleCapa;
+window.popupConstrSetBaseLayer = popupConstrSetBaseLayer;
+window.popupConstrToggleCapasMenu = popupConstrToggleCapasMenu;

@@ -524,45 +524,59 @@ async function obtenerFichaPorClave(clave) {
   return expedienteGeojson.properties || null;
 }
 
-async function cargarDesdeBusqueda(registro) {
-  const resFicha = await fetch(`${API}/expediente/${registro.clave_catastral}`, { headers: authHeaders() });
-
-  if (!resFicha.ok) {
-    if (registro.dibujado) {
-      document.getElementById("ficha").innerHTML = `
-        <div class="ficha-title">Ficha predial institucional</div>
-        <div class="ficha-row"><b>Clave:</b><span>${val(registro.clave_catastral)}</span></div>
-        <div class="ficha-row"><b>Propietario:</b><span>${val(registro.nombre_completo || registro.propietario)}</span></div>
-        <div class="ficha-row"><b>Estatus:</b><span class="badge-ok">DIBUJADO EN CARTOGRAFÍA</span></div>
-        <div class="ficha-section">El predio está dibujado, pero no se pudo cargar la ficha integral.</div>
-      `;
-      return;
+function extraerGeojsonPrefetchDesdeCapas(claveNorm) {
+  if (!claveNorm) return null;
+  try {
+    const format = new ol.format.GeoJSON({
+      dataProjection: "EPSG:4326",
+      featureProjection: "EPSG:3857"
+    });
+    const fuentes = [];
+    if (typeof resultadosSource !== "undefined" && resultadosSource) fuentes.push(resultadosSource);
+    if (typeof vectorSource !== "undefined" && vectorSource) fuentes.push(vectorSource);
+    for (let i = 0; i < fuentes.length; i++) {
+      const f = fuentes[i].getFeatures().find(function(x) {
+        return String(x.get("clave_catastral") || "").toUpperCase() === claveNorm;
+      });
+      if (f?.getGeometry()) return format.writeFeatureObject(f);
     }
+  } catch (e) {}
+  return window._cacheFeaturePredioPorClave?.[claveNorm] || null;
+}
 
-    pintarMensajeNoDibujado(registro);
+async function cargarDesdeBusqueda(registro, opciones) {
+  opciones = opciones || {};
+  const clave = registro?.clave_catastral;
+  if (!clave) return;
+
+  const claveNorm = String(clave).trim().toUpperCase();
+  const geojsonPrefetch = opciones.geojsonPrefetch
+    || extraerGeojsonPrefetchDesdeCapas(claveNorm);
+  const featurePrefetch = opciones.featurePrefetch
+    || window._cacheFeaturePredioPorClave?.[claveNorm]
+    || geojsonPrefetch;
+
+  if (typeof seleccionarPorClave === "function") {
+    await seleccionarPorClave(claveNorm, "busqueda", {
+      geojsonPrefetch: geojsonPrefetch,
+      featurePrefetch: featurePrefetch
+    });
+  }
+
+  if (claveSeleccionadaActual === claveNorm) return;
+
+  if (esPredioDibujadoBusqueda(registro)) {
+    document.getElementById("ficha").innerHTML = `
+      <div class="ficha-title">Ficha predial institucional</div>
+      <div class="ficha-row"><b>Clave:</b><span>${val(registro.clave_catastral)}</span></div>
+      <div class="ficha-row"><b>Propietario:</b><span>${val(registro.nombre_completo || registro.propietario)}</span></div>
+      <div class="ficha-row"><b>Estatus:</b><span class="badge-ok">DIBUJADO EN CARTOGRAFÍA</span></div>
+      <div class="ficha-section">No se pudo cargar la ficha completa del predio.</div>
+    `;
     return;
   }
 
-  const fichaGeojson = await resFicha.json();
-  const ficha = fichaGeojson.properties || registro;
-
-  if (fichaGeojson.geometry) {
-    await seleccionarPorClave(ficha.clave_catastral || registro.clave_catastral);
-    return;
-  }
-
-  const claveNorm = String(ficha.clave_catastral || registro.clave_catastral || "").trim().toUpperCase();
-  claveSeleccionadaActual = claveNorm;
-  document.getElementById("claveInput").value = claveNorm;
-  sincronizarClavesMovimientoConPredioActivo();
-
-  if (ficha.dibujado || registro.dibujado) {
-    pintarFicha(ficha);
-    return;
-  }
-
-  vectorSource.clear();
-  pintarMensajeNoDibujado(ficha);
+  pintarMensajeNoDibujado(registro);
 }
 
 
@@ -644,7 +658,12 @@ async function obtenerGeojsonPorClaveParaZoom(clave, dibujado) {
 
     if (r.ok) {
       const data = await r.json();
-      if (data && data.geometry) return data;
+      const claveNorm = String(clave || "").trim().toUpperCase();
+      if (data && data.geometry) {
+        window._cacheFeaturePredioPorClave = window._cacheFeaturePredioPorClave || {};
+        window._cacheFeaturePredioPorClave[claveNorm] = data;
+        return data;
+      }
       if (data && data.geojson && data.geojson.geometry) return data.geojson;
       if (data && data.feature && data.feature.geometry) return data.feature;
       return null;
@@ -667,6 +686,33 @@ async function zoomAResultadosBusqueda(resultados) {
   resultadosSource.clear();
 
   const format = new ol.format.GeoJSON();
+
+  // Un solo resultado: una sola /ficha (+ /expediente si aplica), sin consultas duplicadas.
+  if (resultados.length === 1 && resultados[0].clave_catastral) {
+    const p = resultados[0];
+    const clave = p.clave_catastral;
+    let featurePrefetch = null;
+    if (esPredioDibujadoBusqueda(p)) {
+      featurePrefetch = await obtenerGeojsonPorClaveParaZoom(clave, p.dibujado);
+      if (featurePrefetch?.geometry) {
+        const feature = format.readFeature(featurePrefetch, {
+          dataProjection: "EPSG:4326",
+          featureProjection: "EPSG:3857"
+        });
+        feature.set("clave_catastral", clave);
+        feature.set("adeudo_total", Number(p.adeudo_total || featurePrefetch.properties?.adeudo_total || 0));
+        feature.set("info_fiscal", true);
+        feature.set("seleccionado", false);
+        feature.set("principal", true);
+        resultadosSource.addFeature(feature);
+      }
+    }
+    await seleccionarPorClave(clave, "busqueda", {
+      geojsonPrefetch: featurePrefetch,
+      featurePrefetch: featurePrefetch
+    });
+    return;
+  }
 
   const dibujados = resultados.filter(esPredioDibujadoBusqueda);
   const limite = Math.min(dibujados.length || resultados.length, 50);
@@ -696,12 +742,6 @@ async function zoomAResultadosBusqueda(resultados) {
 
   const features = resultadosSource.getFeatures();
   if (features.length === 0) return;
-
-  // Si es un solo resultado, también lo manda al flujo normal de selección/ficha.
-  if (resultados.length === 1 && resultados[0].clave_catastral) {
-    await cargarDesdeBusqueda(resultados[0]);
-    return;
-  }
 
   const extent = resultadosSource.getExtent();
 

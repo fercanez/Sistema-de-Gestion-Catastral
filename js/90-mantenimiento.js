@@ -1748,3 +1748,307 @@ window.abrirMantenimientoColonias = abrirMantenimientoColonias;
 window.cerrarMantenimientoColonias = cerrarMantenimientoColonias;
 window.buscarMantenimientoColonias = buscarMantenimientoColonias;
 window.mantCatEstado = mantCatEstado;
+
+/* --- Importación de adeudos fiscales (Adeudo2026.xlsx) --- */
+
+const MANT_ADEUdos_BATCH = 5000;
+let _mantAdeudosFilas = [];
+let _mantAdeudosParseErrores = [];
+
+function normalizarKeysImportAdeudo(raw) {
+  const out = {};
+  Object.keys(raw || {}).forEach(function(k) {
+    out[String(k).trim().toUpperCase().replace(/\s+/g, "_")] = raw[k];
+  });
+  return out;
+}
+
+function esPagoSiImportAdeudo(valor) {
+  const t = String(valor || "").trim().toUpperCase();
+  return t === "SI" || t === "SÍ" || t === "S" || t === "1" || t === "TRUE" || t === "PAGADO" || t === "PAGO" || t === "YES" || t === "Y";
+}
+
+function filasDesdeRawAdeudos(rawRows) {
+  const map = new Map();
+  const errores = [];
+  (rawRows || []).forEach(function(raw, idx) {
+    const r = normalizarKeysImportAdeudo(raw);
+    const clave = String(r.CLAVECATASTRAL || r.CLAVE_CATASTRAL || r.CLAVE || "").trim().toUpperCase().replace(/\s+/g, "");
+    if (!clave) return;
+    const pago = r.PAGO != null ? String(r.PAGO).trim() : "";
+    let adeudoRaw = r.ADEUDO;
+    if (adeudoRaw == null || adeudoRaw === "") adeudoRaw = 0;
+    const adeudo = parseFloat(String(adeudoRaw).replace(/[$,\s]/g, ""));
+    if (isNaN(adeudo)) {
+      errores.push("Fila " + (idx + 2) + ": adeudo inválido (" + clave + ")");
+      return;
+    }
+    map.set(clave, { clave_catastral: clave, adeudo: adeudo, pago: pago });
+  });
+  return { filas: Array.from(map.values()), errores: errores };
+}
+
+function parsearArchivoAdeudosMantenimiento(file) {
+  return new Promise(function(resolve, reject) {
+    if (typeof XLSX === "undefined") {
+      reject(new Error("Biblioteca Excel no disponible."));
+      return;
+    }
+    const nombre = (file.name || "").toLowerCase();
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        if (nombre.endsWith(".csv") || nombre.endsWith(".txt")) {
+          const texto = String(ev.target.result || "");
+          const wb = XLSX.read(texto, { type: "string", raw: false });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          if (!sheet) {
+            reject(new Error("El archivo no contiene hojas de datos."));
+            return;
+          }
+          resolve(XLSX.utils.sheet_to_json(sheet, { defval: "" }));
+          return;
+        }
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: "array", raw: false });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        if (!sheet) {
+          reject(new Error("El archivo no contiene hojas de datos."));
+          return;
+        }
+        resolve(XLSX.utils.sheet_to_json(sheet, { defval: "" }));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    reader.onerror = function() { reject(new Error("No se pudo leer el archivo.")); };
+    if (nombre.endsWith(".csv") || nombre.endsWith(".txt")) reader.readAsText(file, "UTF-8");
+    else reader.readAsArrayBuffer(file);
+  });
+}
+
+function setMantAdeudosMsg(texto, ok) {
+  const msg = document.getElementById("mantAdeudosMsg");
+  if (!msg) return;
+  msg.textContent = texto || "";
+  msg.className = "mant-prop-msg" + (ok === true ? " ok" : ok === false ? " error" : "");
+}
+
+function renderResumenAdeudosMantenimiento(filas, erroresParse) {
+  const el = document.getElementById("mantAdeudosResumen");
+  if (!el) return;
+  if (!filas.length) {
+    el.innerHTML = "";
+    return;
+  }
+  let conPago = 0;
+  let sinPago = 0;
+  let montoSinPago = 0;
+  filas.forEach(function(f) {
+    if (esPagoSiImportAdeudo(f.pago)) conPago += 1;
+    else {
+      sinPago += 1;
+      montoSinPago += Number(f.adeudo || 0);
+    }
+  });
+  const fmt = typeof formatoMoneda === "function" ? formatoMoneda : function(v) { return v; };
+  el.innerHTML =
+    "<div class=\"mant-adeudos-kpi\">" +
+    "<span><b>" + filas.length.toLocaleString("es-MX") + "</b> claves únicas</span>" +
+    "<span><b>" + conPago.toLocaleString("es-MX") + "</b> con PAGO = SI (sin adeudo)</span>" +
+    "<span><b>" + sinPago.toLocaleString("es-MX") + "</b> con PAGO = NO</span>" +
+    "<span>Total adeudo reportado: <b>" + fmt(montoSinPago) + "</b></span>" +
+    (erroresParse.length ? "<span class=\"mant-adeudos-warn\">" + erroresParse.length + " fila(s) omitida(s) por error</span>" : "") +
+    "</div>";
+}
+
+function renderPreviewAdeudosMantenimiento(filas) {
+  const el = document.getElementById("mantAdeudosPreview");
+  if (!el) return;
+  if (!filas.length) {
+    el.innerHTML = "";
+    return;
+  }
+  const muestra = filas.slice(0, 12);
+  const fmt = typeof formatoMoneda === "function" ? formatoMoneda : function(v) { return v; };
+  let html = "<table class=\"mant-adeudos-preview-table\"><thead><tr>" +
+    "<th>Clave</th><th>Adeudo archivo</th><th>Pago</th><th>→ adeudo_2026</th><th>→ adeudo_total</th>" +
+    "</tr></thead><tbody>";
+  muestra.forEach(function(f) {
+    const pagado = esPagoSiImportAdeudo(f.pago);
+    const dest = pagado ? 0 : Number(f.adeudo || 0);
+    html += "<tr>" +
+      "<td>" + f.clave_catastral + "</td>" +
+      "<td>" + fmt(f.adeudo) + "</td>" +
+      "<td>" + (f.pago || "—") + "</td>" +
+      "<td>" + fmt(dest) + "</td>" +
+      "<td>" + fmt(dest) + "</td>" +
+      "</tr>";
+  });
+  html += "</tbody></table>";
+  if (filas.length > muestra.length) {
+    html += "<div class=\"mant-adeudos-preview-more\">Mostrando " + muestra.length + " de " + filas.length.toLocaleString("es-MX") + " filas.</div>";
+  }
+  el.innerHTML = html;
+}
+
+function abrirMantenimientoAdeudos() {
+  if (typeof puedeEditarCatastro === "function" && !puedeEditarCatastro()) {
+    alert("No tiene permisos para importar adeudos.");
+    return;
+  }
+  const modal = document.getElementById("modalMantenimientoAdeudos");
+  if (!modal) return;
+  _mantAdeudosFilas = [];
+  _mantAdeudosParseErrores = [];
+  const fileInput = document.getElementById("mantAdeudosFile");
+  if (fileInput) fileInput.value = "";
+  const resumen = document.getElementById("mantAdeudosResumen");
+  const preview = document.getElementById("mantAdeudosPreview");
+  if (resumen) resumen.innerHTML = "";
+  if (preview) preview.innerHTML = "";
+  setMantAdeudosMsg("", null);
+  const prog = document.getElementById("mantAdeudosProgress");
+  if (prog) prog.classList.add("oculto");
+  modal.classList.remove("oculto");
+}
+window.abrirMantenimientoAdeudos = abrirMantenimientoAdeudos;
+
+function cerrarMantenimientoAdeudos() {
+  const modal = document.getElementById("modalMantenimientoAdeudos");
+  if (modal) modal.classList.add("oculto");
+}
+window.cerrarMantenimientoAdeudos = cerrarMantenimientoAdeudos;
+
+async function vistaPreviaAdeudosMantenimiento() {
+  const file = document.getElementById("mantAdeudosFile")?.files?.[0];
+  if (!file) {
+    alert("Seleccione un archivo Excel o CSV.");
+    return;
+  }
+  setMantAdeudosMsg("Leyendo archivo...", null);
+  try {
+    const rawRows = await parsearArchivoAdeudosMantenimiento(file);
+    const parsed = filasDesdeRawAdeudos(rawRows);
+    _mantAdeudosFilas = parsed.filas;
+    _mantAdeudosParseErrores = parsed.errores;
+    if (!_mantAdeudosFilas.length) {
+      throw new Error("No se encontraron filas válidas. Verifique columnas CLAVECATASTRAL, ADEUDO y PAGO.");
+    }
+    renderResumenAdeudosMantenimiento(_mantAdeudosFilas, _mantAdeudosParseErrores);
+    renderPreviewAdeudosMantenimiento(_mantAdeudosFilas);
+    setMantAdeudosMsg("Vista previa lista. Revise el resumen antes de importar.", true);
+  } catch (e) {
+    _mantAdeudosFilas = [];
+    _mantAdeudosParseErrores = [];
+    renderResumenAdeudosMantenimiento([], []);
+    renderPreviewAdeudosMantenimiento([]);
+    setMantAdeudosMsg(e.message || String(e), false);
+  }
+}
+window.vistaPreviaAdeudosMantenimiento = vistaPreviaAdeudosMantenimiento;
+
+async function descargarPlantillaAdeudosMantenimiento() {
+  try {
+    const r = await fetch(`${API}/padron/mantenimiento/adeudos/plantilla.csv?_=${Date.now()}`, {
+      cache: "no-store",
+      headers: typeof authHeaders === "function" ? authHeaders() : {}
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(function() { return {}; });
+      throw new Error(data.detail || data.message || "No se pudo descargar la plantilla");
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "plantilla_adeudos_2026.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert(e.message || String(e));
+  }
+}
+window.descargarPlantillaAdeudosMantenimiento = descargarPlantillaAdeudosMantenimiento;
+
+function actualizarProgresoAdeudosMantenimiento(actual, total) {
+  const wrap = document.getElementById("mantAdeudosProgress");
+  const bar = document.getElementById("mantAdeudosProgressBar");
+  if (!wrap || !bar) return;
+  wrap.classList.remove("oculto");
+  const pct = total > 0 ? Math.min(100, Math.round((actual / total) * 100)) : 0;
+  bar.style.width = pct + "%";
+  bar.textContent = pct + "%";
+}
+
+async function importarAdeudosMantenimiento() {
+  if (typeof puedeEditarCatastro === "function" && !puedeEditarCatastro()) {
+    alert("No tiene permisos para importar adeudos.");
+    return;
+  }
+  if (!_mantAdeudosFilas.length) {
+    await vistaPreviaAdeudosMantenimiento();
+    if (!_mantAdeudosFilas.length) return;
+  }
+  const total = _mantAdeudosFilas.length;
+  const lotes = Math.ceil(total / MANT_ADEUdos_BATCH);
+  const confirmMsg =
+    "¿Importar adeudos de " + total.toLocaleString("es-MX") + " predios al padrón 2026?\n\n" +
+    "Se actualizarán adeudo_2026 y adeudo_total según PAGO (SI → 0, NO → monto ADEUDO).\n" +
+    "El proceso se enviará en " + lotes + " lote(s).";
+  if (!confirm(confirmMsg)) return;
+
+  setMantAdeudosMsg("Importando...", null);
+  actualizarProgresoAdeudosMantenimiento(0, total);
+
+  const acum = {
+    actualizados: 0,
+    no_encontrados: 0,
+    omitidos: 0,
+    errores: [],
+    no_encontrados_muestra: []
+  };
+
+  try {
+    for (let i = 0; i < total; i += MANT_ADEUdos_BATCH) {
+      const chunk = _mantAdeudosFilas.slice(i, i + MANT_ADEUdos_BATCH);
+      const r = await fetch(`${API}/padron/mantenimiento/adeudos/importar`, {
+        method: "POST",
+        headers: Object.assign(
+          { "Content-Type": "application/json" },
+          typeof authHeaders === "function" ? authHeaders() : {}
+        ),
+        body: JSON.stringify({ ejercicio: 2026, filas: chunk })
+      });
+      const data = await r.json().catch(function() { return {}; });
+      if (!r.ok) throw new Error(data.detail || data.message || "Error en importación");
+
+      acum.actualizados += Number(data.actualizados || 0);
+      acum.no_encontrados += Number(data.no_encontrados || 0);
+      acum.omitidos += Number(data.omitidos || 0);
+      if (data.errores && data.errores.length) acum.errores = acum.errores.concat(data.errores);
+      if (data.no_encontrados_muestra && data.no_encontrados_muestra.length) {
+        acum.no_encontrados_muestra = acum.no_encontrados_muestra.concat(data.no_encontrados_muestra);
+      }
+      actualizarProgresoAdeudosMantenimiento(Math.min(i + chunk.length, total), total);
+    }
+
+    const detNoEnc = acum.no_encontrados_muestra.length
+      ? " · Ej. no encontradas: " + acum.no_encontrados_muestra.slice(0, 5).join(", ")
+      : "";
+    const detErr = acum.errores.length ? " · Errores: " + acum.errores.slice(0, 2).join("; ") : "";
+    setMantAdeudosMsg(
+      "Importación completada: " +
+        acum.actualizados.toLocaleString("es-MX") + " actualizados, " +
+        acum.no_encontrados.toLocaleString("es-MX") + " claves no encontradas en padrón" +
+        (acum.omitidos ? ", " + acum.omitidos + " omitidos" : "") +
+        detNoEnc + detErr,
+      true
+    );
+  } catch (e) {
+    setMantAdeudosMsg(e.message || String(e), false);
+  }
+}
+window.importarAdeudosMantenimiento = importarAdeudosMantenimiento;

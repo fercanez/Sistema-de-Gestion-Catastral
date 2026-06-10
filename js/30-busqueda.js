@@ -320,31 +320,68 @@ function construirFeatureDesdePrefetch(geojsonPrefetch, claveNorm) {
   };
 }
 
-async function cargarFeaturePredio(claveNorm, geojsonPrefetch, seq) {
-  const ts = Date.now();
-  let feature = await fetchFeaturePredioOpcional(
-    `${API}/padron/${encodeURIComponent(claveNorm)}/ficha?_=${ts}`
-  );
-  if (seq !== seleccionPredioSeq) return null;
+function normalizarFeaturePredioApi(raw, claveNorm) {
+  if (!raw || typeof raw !== "object") return null;
+  if (raw.type === "Feature" && (raw.properties || raw.geometry)) return raw;
+  if (raw.geometry || raw.properties) {
+    return {
+      type: "Feature",
+      geometry: raw.geometry || null,
+      properties: raw.properties || raw
+    };
+  }
+  if (raw.clave_catastral || raw.predio_id !== undefined) {
+    return { type: "Feature", geometry: null, properties: raw };
+  }
+  return null;
+}
 
-  const props = feature?.properties || {};
+function guardarFeaturePredioEnCache(claveNorm, feature) {
+  if (!claveNorm || !feature) return;
+  window._cacheFeaturePredioPorClave = window._cacheFeaturePredioPorClave || {};
+  window._cacheFeaturePredioPorClave[claveNorm] = feature;
+}
+
+async function cargarFeaturePredio(claveNorm, geojsonPrefetch, seq, opciones) {
+  opciones = opciones || {};
+  const ts = Date.now();
+  let feature = normalizarFeaturePredioApi(opciones.featurePrefetch, claveNorm);
+
+  if (!feature) {
+    feature = await fetchFeaturePredioOpcional(
+      `${API}/padron/${encodeURIComponent(claveNorm)}/ficha?_=${ts}`
+    );
+    feature = normalizarFeaturePredioApi(feature, claveNorm);
+  }
+  if (seq !== seleccionPredioSeq) return null;
+  if (!feature) {
+    if (geojsonPrefetch?.geometry) {
+      feature = construirFeatureDesdePrefetch(geojsonPrefetch, claveNorm);
+    }
+    return feature;
+  }
+
+  const props = feature.properties || {};
   const soloCartografia = props.solo_cartografia === true;
   const tieneExpediente = props.tiene_expediente === true;
+  const yaEsExpediente = props.tiene_documentos !== undefined
+    || props.estatus_expediente !== undefined
+    || props.id_expediente !== undefined;
 
-  if (tieneExpediente && !soloCartografia) {
+  if (tieneExpediente && !soloCartografia && !yaEsExpediente && !opciones.omitirExpediente) {
     const exp = await fetchFeaturePredioOpcional(
       `${API}/expediente/${encodeURIComponent(claveNorm)}?_=${ts}`
     );
     if (seq !== seleccionPredioSeq) return null;
-    if (exp) feature = exp;
+    const expNorm = normalizarFeaturePredioApi(exp, claveNorm);
+    if (expNorm) feature = expNorm;
   }
 
-  if (!feature && geojsonPrefetch?.geometry) {
-    feature = construirFeatureDesdePrefetch(geojsonPrefetch, claveNorm);
-  } else if (feature && geojsonPrefetch?.geometry) {
+  if (geojsonPrefetch?.geometry) {
     feature.geometry = geojsonPrefetch.geometry;
   }
 
+  guardarFeaturePredioEnCache(claveNorm, feature);
   return feature;
 }
 
@@ -360,7 +397,8 @@ async function seleccionarPorClave(clave, origen = "programa", opciones = {}) {
   // a que termine de cargar la ficha (/expediente), que es lo que se sentía lento.
   let zoomYaAplicado = false;
   const geojsonPrefetch = opciones?.geojsonPrefetch;
-  if (geojsonPrefetch?.geometry && origen === "mapa") {
+  const feedbackVisualInmediato = origen === "mapa" || origen === "busqueda";
+  if (geojsonPrefetch?.geometry && feedbackVisualInmediato) {
     try {
       const formatPre = new ol.format.GeoJSON({
         dataProjection: "EPSG:4326",
@@ -385,7 +423,10 @@ async function seleccionarPorClave(clave, origen = "programa", opciones = {}) {
     }
   }
 
-  const featureGeojson = await cargarFeaturePredio(claveNorm, geojsonPrefetch, seq);
+  const featureGeojson = await cargarFeaturePredio(claveNorm, geojsonPrefetch, seq, {
+    featurePrefetch: opciones?.featurePrefetch,
+    omitirExpediente: opciones?.omitirExpediente === true
+  });
   if (seq !== seleccionPredioSeq) return;
   if (!featureGeojson) return;
 
@@ -456,6 +497,17 @@ async function seleccionarPorClave(clave, origen = "programa", opciones = {}) {
 
   if (debeHacerZoom && geomParaZoom) {
     programarZoomPredioSeleccionado(geomParaZoom, {}, seq);
+  }
+
+  if (typeof activarCapasPredioSeleccionado === "function" &&
+      typeof enModoGestionCatastral === "function" && enModoGestionCatastral()) {
+    activarCapasPredioSeleccionado();
+  }
+
+  if (typeof enModoGestionCatastral === "function" && enModoGestionCatastral()) {
+    if (typeof abrirPopupPredioWorkspace === "function") {
+      abrirPopupPredioWorkspace(window.predioSeleccionado || ficha);
+    }
   }
 }
 
