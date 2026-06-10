@@ -458,6 +458,29 @@ body.analisis-zonas-activo {
   font-size: 9px !important;
 }
 
+/* Gestión Catastral: panel lateral siempre visible (Consulta + Capas) */
+body.modo-gestion-catastral .app-institucional #panel,
+body.modo-gestion-catastral .app-institucional #panel.panel-oculto,
+body.modo-gestion-catastral #panel.panel-oculto {
+  display: flex !important;
+  flex: 0 0 var(--inst-sidebar-w, 365px) !important;
+  width: var(--inst-sidebar-w, 365px) !important;
+  max-width: var(--inst-sidebar-w, 365px) !important;
+  min-width: 280px !important;
+  transform: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+body.modo-gestion-catastral #panel .tabs.tabs-modulos-trabajo .tab-btn.tab-modulo-extra {
+  display: none !important;
+}
+
+body.modo-gestion-catastral #panel .tabs.tabs-modulos-trabajo {
+  grid-template-columns: 1fr 1fr !important;
+}
+
 .app-institucional #panel #tabAnalisisZonas.tab-content.active {
   display: block !important;
   overflow-y: auto !important;
@@ -929,6 +952,90 @@ body.analisis-zonas-activo {
 .btn-mant-prop {
   width: 100%;
   max-width: 320px;
+}
+
+.btn-mant-adeudos {
+  width: 100%;
+  max-width: 320px;
+  background: linear-gradient(180deg, #b45309 0%, #92400e 100%);
+  border-color: #78350f;
+}
+
+.mant-adeudos-window {
+  max-width: 920px;
+  width: min(96vw, 920px);
+}
+
+.mant-adeudos-body {
+  padding: 12px 16px 8px;
+  max-height: calc(100vh - 180px);
+  overflow: auto;
+}
+
+.mant-adeudos-intro {
+  font-size: 12px;
+  color: #475569;
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+
+.mant-adeudos-resumen {
+  margin: 10px 0;
+}
+
+.mant-adeudos-kpi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.mant-adeudos-warn {
+  color: #b45309;
+}
+
+.mant-adeudos-preview {
+  margin-top: 8px;
+}
+
+.mant-adeudos-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.mant-adeudos-preview-table th,
+.mant-adeudos-preview-table td {
+  border: 1px solid #e2e8f0;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.mant-adeudos-preview-table th {
+  background: #f1f5f9;
+  font-weight: 600;
+}
+
+.mant-adeudos-preview-more {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 6px;
+}
+
+#modalMantenimientoAdeudos .mant-prop-progress {
+  margin-top: 10px;
+}
+
+#modalMantenimientoAdeudos .mant-prop-progress-bar {
+  text-align: center;
+  font-size: 11px;
+  line-height: 18px;
+  color: #fff;
 }
 
 .catalogos-mant-btn-row {
