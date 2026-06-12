@@ -1,13 +1,131 @@
 """Router de expediente integral, documentos, control cartografico y dashboards."""
 import os
+import re
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
-from auth.dependencies import obtener_usuario_actual
+from auth.dependencies import obtener_usuario_actual, requerir_permiso, registrar_auditoria
 from database import get_conn
 
 router = APIRouter(tags=["expediente"])
+
+DOCUMENTOS_BASE_DIR = "/var/www/catastro/documentos"
+FOTOS_SLOTS = {
+    "fachada": "FOTO_FACHADA",
+    "aerea": "FOTO_AEREA",
+    "inspeccion_1": "FOTO_INSPECCION_1",
+    "inspeccion_2": "FOTO_INSPECCION_2",
+}
+FOTOS_TIPOS = set(FOTOS_SLOTS.values())
+FOTOS_EXTENSIONES = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+MAX_FOTO_BYTES = 8 * 1024 * 1024
+
+
+def _normalizar_clave_expediente(clave: str) -> str:
+    return re.sub(r"\s+", "", str(clave or "").strip().upper())
+
+
+def _slot_foto_valido(slot: str) -> str:
+    slot_norm = str(slot or "").strip().lower()
+    if slot_norm not in FOTOS_SLOTS:
+        raise HTTPException(status_code=400, detail="Tipo de fotografía no válido")
+    return slot_norm
+
+
+def _ruta_foto_segura(clave_norm: str, nombre_relativo: str) -> str:
+    base_dir = os.path.realpath(DOCUMENTOS_BASE_DIR)
+    ruta = os.path.realpath(os.path.join(base_dir, clave_norm, nombre_relativo))
+    if ruta != base_dir and not ruta.startswith(base_dir + os.sep):
+        raise HTTPException(status_code=400, detail="Ruta de fotografía no válida")
+    return ruta
+
+
+def _asegurar_directorio_fotos(clave_norm: str) -> str:
+    destino = _ruta_foto_segura(clave_norm, "fotos")
+    os.makedirs(destino, exist_ok=True)
+    return destino
+
+
+def _asegurar_expediente(conn, clave_norm: str):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO catastro.expedientes (clave_catastral, estatus, fecha_alta, fecha_actualizacion)
+        SELECT %s, 'ACTIVO', NOW(), NOW()
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM catastro.expedientes
+            WHERE UPPER(TRIM(clave_catastral)) = %s
+        );
+        """,
+        (clave_norm, clave_norm),
+    )
+
+
+def _actualizar_banderas_fotos(conn, clave_norm: str):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE catastro.expedientes e
+        SET
+            tiene_fotografia = EXISTS (
+                SELECT 1
+                FROM catastro.expediente_documentos d
+                WHERE UPPER(TRIM(d.clave_catastral)) = %s
+                  AND COALESCE(d.activo, true) = true
+                  AND d.tipo_documento IN ('FOTO_FACHADA', 'FOTO_AEREA')
+            ),
+            tiene_inspeccion = EXISTS (
+                SELECT 1
+                FROM catastro.expediente_documentos d
+                WHERE UPPER(TRIM(d.clave_catastral)) = %s
+                  AND COALESCE(d.activo, true) = true
+                  AND d.tipo_documento IN ('FOTO_INSPECCION_1', 'FOTO_INSPECCION_2')
+            ),
+            fecha_actualizacion = NOW()
+        WHERE UPPER(TRIM(e.clave_catastral)) = %s;
+        """,
+        (clave_norm, clave_norm, clave_norm),
+    )
+
+
+def _foto_slot_desde_tipo(tipo_documento: str):
+    for slot, tipo in FOTOS_SLOTS.items():
+        if tipo == tipo_documento:
+            return slot
+    return None
+
+
+def _ruta_documento_foto_en_disco(clave_norm: str, row: dict):
+    if not row:
+        return None
+    ruta = str(row.get("ruta_archivo") or "").strip()
+    base = os.path.realpath(DOCUMENTOS_BASE_DIR)
+    if ruta and os.path.isfile(ruta):
+        ruta_real = os.path.realpath(ruta)
+        if ruta_real == base or ruta_real.startswith(base + os.sep):
+            return ruta_real
+    nombre = str(row.get("nombre_archivo") or "").strip()
+    if not nombre:
+        return None
+    try:
+        candidata = _ruta_foto_segura(clave_norm, nombre)
+    except HTTPException:
+        return None
+    return candidata if os.path.isfile(candidata) else None
+
+
+def _eliminar_archivo_foto_en_disco(clave_norm: str, row: dict) -> bool:
+    ruta = _ruta_documento_foto_en_disco(clave_norm, row)
+    if not ruta:
+        return False
+    try:
+        os.remove(ruta)
+        return True
+    except OSError:
+        return False
 
 
 @router.get("/control-cartografico/estadisticas")
@@ -263,11 +381,272 @@ def documentos_expediente(clave: str, usuario_actual: dict = Depends(obtener_usu
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/documentos/{clave}/{archivo}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/expediente/{clave}/fotografias")
+def listar_fotografias_expediente(clave: str, usuario_actual: dict = Depends(obtener_usuario_actual)):
+    clave_norm = _normalizar_clave_expediente(clave)
+    if not clave_norm:
+        raise HTTPException(status_code=400, detail="Clave catastral no válida")
+
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                id_documento,
+                clave_catastral,
+                tipo_documento,
+                nombre_archivo,
+                descripcion,
+                usuario_carga,
+                fecha_carga
+            FROM catastro.expediente_documentos
+            WHERE UPPER(TRIM(clave_catastral)) = %s
+              AND COALESCE(activo, true) = true
+              AND tipo_documento = ANY(%s)
+            ORDER BY fecha_carga DESC;
+            """,
+            (clave_norm, list(FOTOS_TIPOS)),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        por_slot = {}
+        fotografias = []
+        for row in rows:
+            slot = _foto_slot_desde_tipo(row["tipo_documento"])
+            if not slot or por_slot.get(slot):
+                continue
+            item = {
+                "slot": slot,
+                "id_documento": row["id_documento"],
+                "tipo_documento": row["tipo_documento"],
+                "nombre_archivo": row["nombre_archivo"],
+                "descripcion": row.get("descripcion"),
+                "usuario_carga": row.get("usuario_carga"),
+                "fecha_carga": row.get("fecha_carga"),
+            }
+            por_slot[slot] = item
+            fotografias.append(item)
+
+        return {
+            "clave_catastral": clave_norm,
+            "total": len(fotografias),
+            "fotografias": fotografias,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/expediente/{clave}/fotografias")
+async def subir_fotografia_expediente(
+    clave: str,
+    slot: str = Form(...),
+    archivo: UploadFile = File(...),
+    usuario_actual: dict = Depends(requerir_permiso("editar_catastro")),
+):
+    clave_norm = _normalizar_clave_expediente(clave)
+    if not clave_norm:
+        raise HTTPException(status_code=400, detail="Clave catastral no válida")
+
+    slot_norm = _slot_foto_valido(slot)
+    tipo_documento = FOTOS_SLOTS[slot_norm]
+    nombre_original = os.path.basename(str(archivo.filename or "foto.jpg"))
+    extension = os.path.splitext(nombre_original)[1].lower()
+    if extension not in FOTOS_EXTENSIONES:
+        raise HTTPException(status_code=400, detail="Formato no permitido. Use JPG, PNG, WEBP o GIF.")
+
+    contenido = await archivo.read()
+    if not contenido:
+        raise HTTPException(status_code=400, detail="Archivo vacío")
+    if len(contenido) > MAX_FOTO_BYTES:
+        raise HTTPException(status_code=400, detail="La fotografía supera el tamaño máximo de 8 MB")
+
+    nombre_archivo = f"fotos/{slot_norm}_{datetime.now().strftime('%Y%m%d%H%M%S')}{extension}"
+    ruta_abs = _ruta_foto_segura(clave_norm, nombre_archivo)
+
+    conn = None
+    cur = None
+    try:
+        os.makedirs(os.path.dirname(ruta_abs), exist_ok=True)
+        with open(ruta_abs, "wb") as destino:
+            destino.write(contenido)
+
+        conn = get_conn()
+        cur = conn.cursor()
+        _asegurar_expediente(conn, clave_norm)
+        cur.execute(
+            """
+            SELECT id_documento, nombre_archivo, ruta_archivo
+            FROM catastro.expediente_documentos
+            WHERE UPPER(TRIM(clave_catastral)) = %s
+              AND tipo_documento = %s
+              AND COALESCE(activo, true) = true;
+            """,
+            (clave_norm, tipo_documento),
+        )
+        fotos_anteriores = cur.fetchall() or []
+        cur.execute(
+            """
+            UPDATE catastro.expediente_documentos
+            SET activo = false
+            WHERE UPPER(TRIM(clave_catastral)) = %s
+              AND tipo_documento = %s
+              AND COALESCE(activo, true) = true;
+            """,
+            (clave_norm, tipo_documento),
+        )
+        cur.execute(
+            """
+            INSERT INTO catastro.expediente_documentos (
+                clave_catastral,
+                tipo_documento,
+                nombre_archivo,
+                ruta_archivo,
+                descripcion,
+                anio,
+                origen,
+                activo,
+                usuario_carga
+            )
+            VALUES (%s, %s, %s, %s, %s, EXTRACT(YEAR FROM CURRENT_DATE)::int, 'SGC', true, %s)
+            RETURNING id_documento, fecha_carga;
+            """,
+            (
+                clave_norm,
+                tipo_documento,
+                nombre_archivo,
+                ruta_abs,
+                FOTOS_SLOTS[slot_norm].replace("FOTO_", "").replace("_", " "),
+                usuario_actual.get("usuario"),
+            ),
+        )
+        insertado = cur.fetchone()
+        _actualizar_banderas_fotos(conn, clave_norm)
+        conn.commit()
+
+        for previa in fotos_anteriores:
+            _eliminar_archivo_foto_en_disco(clave_norm, previa)
+
+        registrar_auditoria(
+            usuario_actual.get("usuario"),
+            "SUBIR_FOTO_EXPEDIENTE",
+            "expediente",
+            f"clave={clave_norm}; slot={slot_norm}; archivo={nombre_archivo}",
+        )
+
+        return {
+            "ok": True,
+            "clave_catastral": clave_norm,
+            "slot": slot_norm,
+            "id_documento": insertado["id_documento"],
+            "nombre_archivo": nombre_archivo,
+            "fecha_carga": insertado.get("fecha_carga"),
+        }
+    except HTTPException:
+        if conn:
+            conn.rollback()
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        if os.path.isfile(ruta_abs):
+            try:
+                os.remove(ruta_abs)
+            except OSError:
+                pass
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+
+@router.delete("/expediente/{clave}/fotografias/{id_documento}")
+def eliminar_fotografia_expediente(
+    clave: str,
+    id_documento: int,
+    usuario_actual: dict = Depends(requerir_permiso("editar_catastro")),
+):
+    clave_norm = _normalizar_clave_expediente(clave)
+    if not clave_norm:
+        raise HTTPException(status_code=400, detail="Clave catastral no válida")
+
+    conn = None
+    cur = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id_documento, nombre_archivo, ruta_archivo, tipo_documento
+            FROM catastro.expediente_documentos
+            WHERE id_documento = %s
+              AND UPPER(TRIM(clave_catastral)) = %s
+              AND COALESCE(activo, true) = true
+              AND tipo_documento = ANY(%s);
+            """,
+            (id_documento, clave_norm, list(FOTOS_TIPOS)),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Fotografía no encontrada")
+
+        cur.execute(
+            """
+            UPDATE catastro.expediente_documentos
+            SET activo = false
+            WHERE id_documento = %s;
+            """,
+            (id_documento,),
+        )
+        _actualizar_banderas_fotos(conn, clave_norm)
+        conn.commit()
+
+        archivo_eliminado = _eliminar_archivo_foto_en_disco(clave_norm, row)
+
+        registrar_auditoria(
+            usuario_actual.get("usuario"),
+            "ELIMINAR_FOTO_EXPEDIENTE",
+            "expediente",
+            f"clave={clave_norm}; id={id_documento}; archivo={row.get('nombre_archivo')}; disco={'si' if archivo_eliminado else 'no'}",
+        )
+
+        return {"ok": True, "id_documento": id_documento, "archivo_eliminado_disco": archivo_eliminado}
+    except HTTPException:
+        if conn:
+            conn.rollback()
+        raise
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+
+@router.get("/documentos/{clave}/{archivo:path}")
 def abrir_documento(clave: str, archivo: str):
     # Protección contra path traversal: la ruta final, ya resuelta (sin '..',
     # symlinks, etc.), debe quedar estrictamente dentro de la carpeta base.
-    base_dir = os.path.realpath("/var/www/catastro/documentos")
+    base_dir = os.path.realpath(DOCUMENTOS_BASE_DIR)
     ruta = os.path.realpath(os.path.join(base_dir, clave, archivo))
 
     if ruta != base_dir and not ruta.startswith(base_dir + os.sep):

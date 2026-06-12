@@ -70,6 +70,8 @@ def root():
         "tenencia_predio_put": True,
         "tenencia_prefijo_clave": True,
         "ficha_titular_vigente": True,
+        "fotografias_expediente": True,
+        "fotografias_borra_disco": True,
     }
 
 

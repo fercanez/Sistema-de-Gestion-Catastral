@@ -1264,6 +1264,7 @@ async function pintarPopupTabConstrucciones(p) {
         <div class="popup-construcciones-mapa-head">
           <span>Medición cartográfica</span>
           <div class="popup-construcciones-mapa-head-actions">
+            <button type="button" class="popup-btn-imprimir-ficha" onclick="exportarPdfFichaCartografia()" title="Abrir ficha cartográfica e imprimir o guardar PDF (Oficio)">🖨️ Imprimir / PDF</button>
             <label class="popup-construcciones-head-toggle" title="Mostrar u ocultar cuadro de medición">
               <input type="checkbox" id="popupConstrChkPanelMedicion" checked onchange="popupConstrTogglePanelMedicion()">
               <span>Medición</span>
@@ -1316,6 +1317,58 @@ async function pintarPopupTabConstrucciones(p) {
   inicializarMapaConstrucciones();
   await cargarGeometriaEnMapaConstrucciones(clave, p);
 }
+
+async function popupConstrRecopilarDatosFichaCartografia(clave, p) {
+  const claveNorm = String(clave || "").trim().toUpperCase();
+  let cuadro = { filas: [], area: 0, perimetro: 0 };
+  let construcciones = [];
+  let featureGeoJSON = null;
+  let construccionesGeoJSON = null;
+
+  const geom3857 = typeof resolverGeometriaPredioPopup === "function"
+    ? await resolverGeometriaPredioPopup(claveNorm)
+    : null;
+
+  if (geom3857 && asegurarProj4Utm11()) {
+    const geom32611 = popupConstrTransformGeom(
+      geom3857.clone ? geom3857.clone() : geom3857,
+      "EPSG:3857",
+      "EPSG:32611"
+    );
+    if (geom32611) cuadro = popupConstrCalcularCuadro(geom32611);
+  }
+
+  try {
+    const data = await popupConstrFetchConstrucciones(claveNorm);
+    construcciones = data?.construcciones || [];
+    construccionesGeoJSON = data?._geojson || null;
+    if (!construccionesGeoJSON) {
+      try {
+        const wfs = await popupConstrFetchConstruccionesWfs(claveNorm);
+        if (!construcciones.length) construcciones = wfs.construcciones || [];
+        construccionesGeoJSON = wfs._geojson || null;
+      } catch (e2) {}
+    }
+  } catch (e) {
+    console.warn("No se pudieron cargar construcciones para ficha cartografía:", e);
+  }
+
+  if (geom3857) {
+    try {
+      const geom = geom3857.clone ? geom3857.clone() : geom3857;
+      featureGeoJSON = new ol.format.GeoJSON().writeFeatureObject(
+        new ol.Feature({ geometry: geom }),
+        { dataProjection: "EPSG:4326", featureProjection: "EPSG:3857" }
+      );
+    } catch (e) {
+      console.warn("No se pudo serializar geometría para ficha cartografía:", e);
+    }
+  }
+
+  return { cuadro, construcciones, featureGeoJSON, construccionesGeoJSON, p: p || null };
+}
+
+window.popupConstrRecopilarDatosFichaCartografia = popupConstrRecopilarDatosFichaCartografia;
 
 window.pintarPopupTabConstrucciones = pintarPopupTabConstrucciones;
 window.destruirPopupConstruccionesMedicion = destruirPopupConstruccionesMedicion;

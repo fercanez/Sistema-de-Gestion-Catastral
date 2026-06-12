@@ -482,7 +482,7 @@ function toggleAdeudosFiscal() {
 }
 
 function urlExpedienteExterno(clave) {
-  return `https://www.mexicali.gob.mx/webpub/consultacatastro/Documentacion.aspx?${encodeURIComponent(clave || "")}`;
+  return `https://www.mexicali.gob.mx/webpub/consultacatastro/documentacion.aspx?${encodeURIComponent(String(clave || "").trim().toUpperCase())}`;
 }
 
 function abrirExpedienteExterno(clave) {

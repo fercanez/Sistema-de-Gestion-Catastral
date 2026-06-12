@@ -824,7 +824,10 @@ async function pintarPopupTabDatosGenerales(p) {
       <div class="popup-media-panel popup-mapa-panel">
         <div class="popup-media-head">
           <span>Localización cartográfica</span>
-          <button type="button" class="popup-btn-capas" onclick="togglePopupMiniCapasMenu()">Capas</button>
+          <div class="popup-media-head-acciones">
+            <button type="button" class="popup-btn-imprimir-ficha" onclick="exportarPdfDesdePreviewFicha()" title="Abrir vista previa de la ficha">🖨️ Imprimir / PDF</button>
+            <button type="button" class="popup-btn-capas" onclick="togglePopupMiniCapasMenu()">Capas</button>
+          </div>
         </div>
         <div class="popup-media-body popup-mini-map-wrap">
           <div id="popupMiniMap" class="popup-mini-map"></div>
@@ -850,50 +853,313 @@ function pintarPopupTabPlaceholder(panelId, titulo, detalle) {
   `;
 }
 
-async function pintarPopupTabArchivo(clave) {
-  const panel = document.getElementById("popupTabArchivo");
-  if (!panel) return;
-  panel.innerHTML = `<div class="popup-placeholder-modulo"><strong>Cargando documentos…</strong></div>`;
+const URL_ARCHIVO_DIGITAL_EXTERNO =
+  "https://www.mexicali.gob.mx/webpub/consultacatastro/documentacion.aspx?";
 
+function urlArchivoDigitalExterno(clave) {
+  const claveNorm = String(clave || "").trim().toUpperCase();
+  if (!claveNorm) return "";
+  return URL_ARCHIVO_DIGITAL_EXTERNO + encodeURIComponent(claveNorm);
+}
+
+function popupEsc(valor) {
+  return typeof escapeHtml === "function" ? escapeHtml(valor) : String(valor ?? "");
+}
+
+const POPUP_FOTOS_SLOTS = [
+  { slot: "fachada", label: "Fachada" },
+  { slot: "aerea", label: "Vista aérea" },
+  { slot: "inspeccion_1", label: "Inspección 1" },
+  { slot: "inspeccion_2", label: "Inspección 2" }
+];
+
+let popupArchivoClaveActual = "";
+
+function puedeGestionarFotosArchivo() {
+  return typeof puedeEditarCatastro === "function" && puedeEditarCatastro();
+}
+
+function authUploadHeadersArchivo() {
+  const token = typeof obtenerTokenInstitucional === "function" ? obtenerTokenInstitucional() : "";
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function urlFotoArchivoServidor(clave, nombreArchivo) {
+  const claveNorm = String(clave || "").trim().toUpperCase();
+  const archivo = String(nombreArchivo || "").replace(/^\/+/, "");
+  if (!claveNorm || !archivo) return "";
+  return `${API}/documentos/${encodeURIComponent(claveNorm)}/${archivo.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function htmlPopupArchivoFotosGrid(claveNorm) {
+  const puedeEditar = puedeGestionarFotosArchivo();
+  return POPUP_FOTOS_SLOTS.map(function(def) {
+    const acciones = puedeEditar ? `
+      <div class="popup-archivo-foto-acciones">
+        <button type="button" class="popup-archivo-foto-btn" onclick="seleccionarFotoArchivo('${def.slot}')">Subir</button>
+        <button type="button" class="popup-archivo-foto-btn popup-archivo-foto-btn-borrar" id="popupFotoBtnBorrar_${def.slot}" onclick="eliminarFotoArchivo('${def.slot}')" style="display:none">Borrar</button>
+      </div>
+      <input type="file" id="popupFotoInput_${def.slot}" class="popup-archivo-foto-input" accept="image/jpeg,image/png,image/webp,image/gif" hidden onchange="subirFotoArchivo('${def.slot}', this)">` : "";
+    return `
+      <div class="popup-archivo-foto-celda" id="popupFotoCelda_${def.slot}" data-slot="${def.slot}">
+        <div class="popup-archivo-foto-media" id="popupFotoMedia_${def.slot}">
+          <span class="popup-archivo-foto-placeholder">${popupEsc(def.label)}</span>
+        </div>
+        ${acciones}
+      </div>`;
+  }).join("");
+}
+
+function actualizarPopupArchivoFotosNota(fotos, p, avisoExtra) {
+  const nota = document.getElementById("popupArchivoFotosNota");
+  if (!nota) return;
+  if (avisoExtra) {
+    nota.textContent = avisoExtra;
+    nota.classList.add("popup-archivo-fotos-nota-alerta");
+    return;
+  }
+  nota.classList.remove("popup-archivo-fotos-nota-alerta");
+  const total = Array.isArray(fotos) ? fotos.length : 0;
+  const inspeccion = (fotos || []).some(f => String(f.slot || "").startsWith("inspeccion_"))
+    || !!p?.tiene_inspeccion;
+  const fotografia = (fotos || []).some(f => f.slot === "fachada" || f.slot === "aerea")
+    || !!p?.tiene_fotografia;
+  nota.textContent = `Fotografías cargadas: ${total}/4 · Inspección: ${inspeccion ? "Registrada" : "Sin registro"} · Fotografía: ${fotografia ? "Registrada" : "Sin registro"}`;
+}
+
+function pintarCeldaFotoArchivo(claveNorm, slot, foto) {
+  const media = document.getElementById(`popupFotoMedia_${slot}`);
+  const btnBorrar = document.getElementById(`popupFotoBtnBorrar_${slot}`);
+  const celda = document.getElementById(`popupFotoCelda_${slot}`);
+  if (!media) return;
+
+  if (!foto || !foto.nombre_archivo) {
+    media.innerHTML = `<span class="popup-archivo-foto-placeholder">${popupEsc((POPUP_FOTOS_SLOTS.find(s => s.slot === slot) || {}).label || slot)}</span>`;
+    media.style.cursor = "";
+    media.title = "";
+    media.onclick = null;
+    if (celda) celda.classList.remove("con-foto");
+    if (btnBorrar) btnBorrar.style.display = "none";
+    media.dataset.idDocumento = "";
+    return;
+  }
+
+  const url = urlFotoArchivoServidor(claveNorm, foto.nombre_archivo);
+  const label = (POPUP_FOTOS_SLOTS.find(s => s.slot === slot) || {}).label || slot;
+  media.innerHTML = `<img src="${popupEsc(url)}" alt="${popupEsc(label)}" class="popup-archivo-foto-img" title="Clic para ver en tamaño completo">`;
+  media.style.cursor = "pointer";
+  media.title = "Clic para ver en tamaño completo";
+  media.onclick = function() {
+    abrirVisorFotoArchivo(url, label);
+  };
+  if (celda) celda.classList.add("con-foto");
+  if (btnBorrar && puedeGestionarFotosArchivo()) btnBorrar.style.display = "";
+  media.dataset.idDocumento = String(foto.id_documento || "");
+}
+
+function asegurarVisorFotoArchivoOverlay() {
+  let overlay = document.getElementById("popupArchivoFotoLightbox");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "popupArchivoFotoLightbox";
+  overlay.className = "popup-archivo-foto-lightbox oculto";
+  overlay.innerHTML = `
+    <div class="popup-archivo-foto-lightbox-backdrop" onclick="cerrarVisorFotoArchivo()"></div>
+    <div class="popup-archivo-foto-lightbox-panel" role="dialog" aria-modal="true" aria-labelledby="popupArchivoFotoLightboxTitulo">
+      <div class="popup-archivo-foto-lightbox-head">
+        <span id="popupArchivoFotoLightboxTitulo">Fotografía</span>
+        <button type="button" class="popup-archivo-foto-lightbox-cerrar" onclick="cerrarVisorFotoArchivo()" title="Cerrar">×</button>
+      </div>
+      <div class="popup-archivo-foto-lightbox-body">
+        <img id="popupArchivoFotoLightboxImg" alt="">
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  if (!window.__popupArchivoFotoLightboxEsc) {
+    window.__popupArchivoFotoLightboxEsc = true;
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") cerrarVisorFotoArchivo();
+    });
+  }
+  return overlay;
+}
+
+function abrirVisorFotoArchivo(url, titulo) {
+  if (!url) return;
+  const overlay = asegurarVisorFotoArchivoOverlay();
+  const img = document.getElementById("popupArchivoFotoLightboxImg");
+  const tituloEl = document.getElementById("popupArchivoFotoLightboxTitulo");
+  if (img) {
+    img.src = url;
+    img.alt = titulo || "Fotografía del predio";
+  }
+  if (tituloEl) tituloEl.textContent = titulo || "Fotografía";
+  overlay.classList.remove("oculto");
+  document.body.classList.add("popup-archivo-foto-lightbox-abierto");
+}
+
+function cerrarVisorFotoArchivo() {
+  const overlay = document.getElementById("popupArchivoFotoLightbox");
+  if (!overlay) return;
+  overlay.classList.add("oculto");
+  document.body.classList.remove("popup-archivo-foto-lightbox-abierto");
+  const img = document.getElementById("popupArchivoFotoLightboxImg");
+  if (img) img.removeAttribute("src");
+}
+
+function mensajeErrorFotoArchivo(r, data, fallback) {
+  if (r && r.status === 404) {
+    return "El servicio de fotografías no está activo en el servidor. Suba routers/expediente.py y reinicie la API (uvicorn).";
+  }
+  if (r && r.status === 401) return "Sesión expirada. Vuelva a iniciar sesión.";
+  if (r && r.status === 403) return "No tiene permisos para gestionar fotografías del expediente.";
+  return typeof extraerMensajeApi === "function" ? extraerMensajeApi(data, fallback) : (data?.detail || fallback);
+}
+
+async function cargarFotografiasArchivo(claveNorm, p) {
+  popupArchivoClaveActual = claveNorm;
   try {
-    const r = await fetch(`${API}/expediente/${encodeURIComponent(clave)}/documentos`, {
+    const r = await fetch(`${API}/expediente/${encodeURIComponent(claveNorm)}/fotografias`, {
       headers: typeof authHeaders === "function" ? authHeaders() : {}
     });
+    if (r.status === 404) {
+      actualizarPopupArchivoFotosNota([], p, "Servicio de fotografías no desplegado en la API. Contacte al administrador.");
+      return;
+    }
     if (!r.ok) {
-      panel.innerHTML = `
-        <div class="popup-placeholder-modulo">
-          <strong>Archivo digitalizado / Expediente</strong>
-          <p>No hay expediente local o no fue posible cargar documentos.</p>
-          <p><a class="btn-expediente-externo" href="${typeof urlExpedienteExterno === "function" ? urlExpedienteExterno(clave) : "#"}" target="_blank" rel="noopener">Abrir expediente documental externo</a></p>
-        </div>`;
+      actualizarPopupArchivoFotosNota([], p, mensajeErrorFotoArchivo(r, await r.json().catch(() => ({})), "No se pudieron cargar las fotografías."));
       return;
     }
     const data = await r.json();
-    const docs = data.documentos || [];
-    if (!docs.length) {
-      panel.innerHTML = `
-        <div class="popup-placeholder-modulo">
-          <strong>Sin documentos registrados</strong>
-          <p>El expediente no tiene archivos digitales en el servidor local.</p>
-        </div>`;
-      return;
-    }
-    let html = `<div class="popup-docs-lista">`;
-    docs.forEach(doc => {
-      const urlDoc = `${API}/documentos/${clave}/${doc.nombre_archivo}`;
-      html += `
-        <div class="popup-docs-item">
-          <div><b>${popupVal(doc.tipo_documento)}</b></div>
-          <div>${popupVal(doc.nombre_archivo)}</div>
-          <div><small>${popupVal(doc.descripcion)} · Año: ${popupVal(doc.anio)}</small></div>
-          <button type="button" onclick="window.open('${urlDoc}', '_blank')">Abrir documento</button>
-        </div>`;
+    const mapa = {};
+    (data.fotografias || []).forEach(function(foto) {
+      if (foto?.slot) mapa[foto.slot] = foto;
     });
-    html += `</div>`;
-    panel.innerHTML = html;
+    POPUP_FOTOS_SLOTS.forEach(function(def) {
+      pintarCeldaFotoArchivo(claveNorm, def.slot, mapa[def.slot] || null);
+    });
+    actualizarPopupArchivoFotosNota(data.fotografias || [], p);
   } catch (e) {
-    panel.innerHTML = `<div class="popup-placeholder-modulo"><strong>Error</strong><p>No fue posible cargar el archivo digitalizado.</p></div>`;
+    actualizarPopupArchivoFotosNota([], p);
   }
+}
+
+function seleccionarFotoArchivo(slot) {
+  if (!puedeGestionarFotosArchivo()) {
+    alert("No tiene permisos para cargar fotografías.");
+    return;
+  }
+  document.getElementById(`popupFotoInput_${slot}`)?.click();
+}
+
+async function subirFotoArchivo(slot, input) {
+  if (!puedeGestionarFotosArchivo()) {
+    alert("No tiene permisos para cargar fotografías.");
+    return;
+  }
+  const claveNorm = popupArchivoClaveActual;
+  const archivo = input?.files?.[0];
+  if (!claveNorm || !archivo) return;
+
+  const form = new FormData();
+  form.append("slot", slot);
+  form.append("archivo", archivo);
+
+  const btn = document.querySelector(`#popupFotoCelda_${slot} .popup-archivo-foto-btn`);
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Subiendo…";
+  }
+
+  try {
+    const r = await fetch(`${API}/expediente/${encodeURIComponent(claveNorm)}/fotografias`, {
+      method: "POST",
+      headers: authUploadHeadersArchivo(),
+      body: form
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      throw new Error(mensajeErrorFotoArchivo(r, data, "No se pudo subir la fotografía"));
+    }
+    await cargarFotografiasArchivo(claveNorm, window.predioSeleccionado || {});
+  } catch (e) {
+    alert(e.message || "No se pudo subir la fotografía.");
+  } finally {
+    if (input) input.value = "";
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Subir";
+    }
+  }
+}
+
+async function eliminarFotoArchivo(slot) {
+  if (!puedeGestionarFotosArchivo()) {
+    alert("No tiene permisos para borrar fotografías.");
+    return;
+  }
+  const claveNorm = popupArchivoClaveActual;
+  const media = document.getElementById(`popupFotoMedia_${slot}`);
+  const idDocumento = media?.dataset?.idDocumento;
+  if (!claveNorm || !idDocumento) return;
+  if (!confirm("¿Eliminar esta fotografía del expediente?")) return;
+
+  try {
+    const r = await fetch(`${API}/expediente/${encodeURIComponent(claveNorm)}/fotografias/${encodeURIComponent(idDocumento)}`, {
+      method: "DELETE",
+      headers: typeof authHeaders === "function" ? authHeaders() : {}
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      throw new Error(mensajeErrorFotoArchivo(r, data, "No se pudo eliminar la fotografía"));
+    }
+    await cargarFotografiasArchivo(claveNorm, window.predioSeleccionado || {});
+  } catch (e) {
+    alert(e.message || "No se pudo eliminar la fotografía.");
+  }
+}
+
+async function pintarPopupTabArchivo(clave, p) {
+  const panel = document.getElementById("popupTabArchivo");
+  if (!panel) return;
+
+  const claveNorm = String(clave || p?.clave_catastral || "").trim().toUpperCase();
+  if (!claveNorm) {
+    panel.innerHTML = `
+      <div class="popup-placeholder-modulo">
+        <strong>Sin clave catastral</strong>
+        <p>Seleccione un predio en el mapa o en la búsqueda.</p>
+      </div>`;
+    return;
+  }
+
+  const urlExt = typeof urlExpedienteExterno === "function"
+    ? urlExpedienteExterno(claveNorm)
+    : urlArchivoDigitalExterno(claveNorm);
+  popupArchivoClaveActual = claveNorm;
+
+  panel.innerHTML = `
+    <div class="popup-archivo-layout">
+      <section class="popup-archivo-panel popup-archivo-externo">
+        <header class="popup-archivo-head">
+          <span>Archivo digital externo</span>
+          <a class="popup-archivo-link-externo" href="${popupEsc(urlExt)}" target="_blank" rel="noopener noreferrer">Abrir en nueva pestaña</a>
+        </header>
+        <div class="popup-archivo-iframe-wrap">
+          <iframe id="popupArchivoDigitalExternoFrame" class="popup-archivo-iframe" title="Archivo digital ${popupEsc(claveNorm)}" src="${popupEsc(urlExt)}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+        </div>
+        <div class="popup-archivo-clave-ref">Clave catastral: <b>${popupEsc(claveNorm)}</b></div>
+      </section>
+      <section class="popup-archivo-panel popup-archivo-fotos">
+        <header class="popup-archivo-head"><span>Fotografías e inspección</span></header>
+        <div class="popup-archivo-fotos-grid" id="popupArchivoFotosGrid">
+          ${htmlPopupArchivoFotosGrid(claveNorm)}
+        </div>
+        <p class="popup-archivo-fotos-nota" id="popupArchivoFotosNota">Cargando fotografías…</p>
+      </section>
+    </div>`;
+
+  await cargarFotografiasArchivo(claveNorm, p);
 }
 
 function pintarPopupTabNumerosOficiales(p) {
@@ -972,7 +1238,7 @@ async function pintarPopupPredioTab(tabId, p) {
       pintarPopupTabPlaceholder("popupTabConstrucciones", "Construcciones / Medidas",
         "Cuadro de construcción, medición de vértices y edición cartográfica — módulo en desarrollo.");
     }
-  } else if (tabId === "archivo") await pintarPopupTabArchivo(clave);
+  } else if (tabId === "archivo") await pintarPopupTabArchivo(clave, p);
   else if (tabId === "numeros-oficiales") pintarPopupTabNumerosOficiales(p);
   else if (tabId === "carta-urbana") {
     pintarPopupTabPlaceholder("popupTabCartaUrbana", "Carta Urbana 2040",
@@ -995,10 +1261,13 @@ function capturarPopupMiniMapParaPDF() {
 }
 
 async function generarFichaCatastralGeneral() {
-  if (typeof generarFichaCatastralGeneralPDF === "function") {
-    return generarFichaCatastralGeneralPDF();
+  if (typeof abrirVentanaFichaCatastralGeneral === "function") {
+    return abrirVentanaFichaCatastralGeneral();
   }
-  alert("El generador PDF no está disponible. Recargue la página e intente de nuevo.");
+  if (typeof abrirPreviewFichaCatastralGeneral === "function") {
+    return abrirPreviewFichaCatastralGeneral();
+  }
+  alert("El generador de ficha no está disponible. Recargue la página con Ctrl+F5.");
 }
 
 function mostrarPopupPredioTab(tabId) {
@@ -1053,6 +1322,12 @@ function engancharPortalModulos() {
   }
 }
 
+window.urlArchivoDigitalExterno = urlArchivoDigitalExterno;
+window.seleccionarFotoArchivo = seleccionarFotoArchivo;
+window.subirFotoArchivo = subirFotoArchivo;
+window.eliminarFotoArchivo = eliminarFotoArchivo;
+window.abrirVisorFotoArchivo = abrirVisorFotoArchivo;
+window.cerrarVisorFotoArchivo = cerrarVisorFotoArchivo;
 window.mostrarSelectorModulos = mostrarSelectorModulos;
 window.entrarModuloPortal = entrarModuloPortal;
 window.volverSelectorModulos = volverSelectorModulos;

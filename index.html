@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="css/30-tablas.css?v=20260610_v125_portal">
   <link rel="stylesheet" href="css/40-modales.css?v=20260610_v125_portal">
   <link rel="stylesheet" href="css/50-modulos.css?v=20260611_v150_panel_ocultar">
-  <link rel="stylesheet" href="css/55-modulos-portal.css?v=20260611_v151_panel_ocultar">
+  <link rel="stylesheet" href="css/55-modulos-portal.css?v=20260612_v91_foto_lightbox">
 </head>
 
 <body>
@@ -629,7 +629,7 @@
 <button id="btnMostrarLeyenda" class="btn-mostrar-leyenda oculto" onclick="toggleLeyendaDinamica()">Leyenda</button>
 
 <footer id="footerInstitucional" class="footer-institucional">
-  <span id="footerVersionInst">SGC v55 · Portal institucional</span>
+  <span id="footerVersionInst">SGC v91 · Visor foto ampliada</span>
   <span class="footer-inst-copy">© Municipio de Mexicali, Baja California</span>
   <button type="button" class="footer-inst-ayuda" onclick="alert('Manual de usuario en preparación.')">Ayuda</button>
 </footer>
@@ -648,7 +648,6 @@
       <div id="popupPredioResumen" class="popup-predio-resumen"></div>
       <div id="popupPredioClave" class="popup-predio-clave">—</div>
       <div id="popupPredioNavInfo" class="popup-predio-nav-info"></div>
-      <button type="button" class="popup-predio-btn-ficha" onclick="generarFichaCatastralGeneral()" title="Generar Ficha Catastral General en PDF">📄 Ficha catastral general</button>
       <button type="button" class="popup-predio-btn-cerrar" onclick="cerrarPopupPredioWorkspace()" title="Cerrar">×</button>
     </header>
     <nav class="popup-predio-tabs" aria-label="Pestañas del predio">
@@ -948,14 +947,16 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/00-nucleo.js?v=20260609_v144_mapa_colonias"></script>
 <script src="js/10-mapa.js?v=20260611_v151_panel_ocultar"></script>
-<script src="js/20-ficha.js?v=20260609_v142_ficha_rapida"></script>
-<script src="js/40-pdf.js?v=20260611_v152_ficha_general"></script>
+<script src="js/20-ficha.js?v=20260612_v91_foto_lightbox"></script>
+<script src="js/40-pdf.js?v=20260612_v91_foto_lightbox"></script>
 <script src="js/30-busqueda.js?v=20260609_v145_panel_capas"></script>
-<script src="js/05-modulos-portal.js?v=20260611_v152_ficha_general"></script>
-<script src="js/06-construcciones-medicion.js?v=20260610_v140_snap_vecinos"></script>
+<script src="js/05-modulos-portal.js?v=20260612_v91_foto_lightbox"></script>
+<script src="js/06-construcciones-medicion.js?v=20260612_v91_foto_lightbox"></script>
 <script src="js/50-admin.js?v=20260610_v125_portal"></script>
 <script src="js/60-propietarios.js?v=20260609_v143_ficha_rapida"></script>
 <script src="js/70-movimientos.js?v=20260610_v125_portal"></script>
+<script src="js/41-ficha-preview.js?v=20260612_v91_foto_lightbox"></script>
+<script src="js/42-ficha-cartografia.js?v=20260612_v91_foto_lightbox"></script>
 <script src="js/80-zonas.js?v=20260610_v125_portal"></script>
 <script src="js/85-condominios.js?v=20260610_v125_portal"></script>
 <script src="js/90-mantenimiento.js?v=20260609_v141_adeudos"></script>

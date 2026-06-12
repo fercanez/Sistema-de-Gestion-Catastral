@@ -38,10 +38,9 @@ function textoPdf(v) {
   return String(v);
 }
 
-function obtenerImagenMapaPDF() {
+function capturarMapaOlParaPDF(mapInst, timeoutMs = 2500) {
   return new Promise(resolve => {
     let resuelto = false;
-
     const finalizar = (img) => {
       if (!resuelto) {
         resuelto = true;
@@ -49,20 +48,26 @@ function obtenerImagenMapaPDF() {
       }
     };
 
-    // Timeout de seguridad: si el mapa tarda o falla, continúa sin croquis capturado.
-    setTimeout(() => finalizar(null), 2500);
+    if (!mapInst || typeof mapInst.once !== "function") {
+      finalizar(null);
+      return;
+    }
+
+    setTimeout(() => finalizar(null), timeoutMs);
 
     try {
-      map.once("rendercomplete", function () {
+      const target = mapInst.getTargetElement ? mapInst.getTargetElement() : null;
+      mapInst.once("rendercomplete", function () {
         try {
-          const size = map.getSize();
+          const size = mapInst.getSize();
           const canvasFinal = document.createElement("canvas");
           canvasFinal.width = size[0];
           canvasFinal.height = size[1];
           const ctx = canvasFinal.getContext("2d");
 
+          const scope = target || document;
           Array.prototype.forEach.call(
-            document.querySelectorAll(".ol-layer canvas, canvas.ol-layer"),
+            scope.querySelectorAll(".ol-layer canvas, canvas.ol-layer"),
             function (canvas) {
               try {
                 if (canvas.width > 0) {
@@ -88,22 +93,27 @@ function obtenerImagenMapaPDF() {
 
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.globalAlpha = 1;
-
-          // Esta línea puede fallar con Google/tiles externos por CORS.
-          const data = canvasFinal.toDataURL("image/png");
-          finalizar(data);
+          finalizar(canvasFinal.toDataURL("image/png"));
         } catch (e) {
-          console.warn("No se pudo capturar el mapa para PDF; se generará sin imagen de mapa.", e);
+          console.warn("No se pudo capturar el mapa para PDF:", e);
           finalizar(null);
         }
       });
 
-      map.renderSync();
+      mapInst.renderSync();
     } catch (e) {
       console.warn("No se pudo iniciar captura del mapa:", e);
       finalizar(null);
     }
   });
+}
+
+function obtenerImagenMapaPDF() {
+  try {
+    return capturarMapaOlParaPDF(typeof map !== "undefined" ? map : null);
+  } catch (e) {
+    return Promise.resolve(null);
+  }
 }
 
 async function generarQRPDF(clave) {
@@ -307,6 +317,374 @@ async function generarCroquisWMSPDF() {
     return null;
   }
 }
+
+function segmentosClaveFicha(clave) {
+  const c = String(clave || "").trim().toUpperCase();
+  const m = c.match(/^([A-Z]{1,3})(\d+)$/);
+  if (!m) return { manzana: "NULL", lote: "NULL", fraccion: "NULL" };
+  const numeros = m[2];
+  const manzana = numeros.slice(0, 3) || "NULL";
+  const lote = numeros.slice(3, 6) || "NULL";
+  const fraccionRaw = numeros.slice(6);
+  const fraccion = fraccionRaw ? (fraccionRaw.replace(/^0+/, "") || fraccionRaw) : "NULL";
+  return { manzana, lote, fraccion };
+}
+
+function construirIdCatastralExtendido(clave) {
+  const c = String(clave || "").trim().toUpperCase();
+  const m = c.match(/^([A-Z]{1,3})(\d+)$/);
+  if (!m) return c;
+  const pref = m[1];
+  const nums = m[2];
+  const manzana = nums.slice(0, 3).padStart(3, "0");
+  const lote = nums.slice(3, 6).padStart(5, "0");
+  const fracc = (nums.slice(6) || "0").padStart(5, "0");
+  return "020010040500010" + pref + manzana + lote + fracc;
+}
+
+function construirDomicilioFisicoFicha(p, numof) {
+  const calle = String(p.calle || "CONOCIDO").trim();
+  const colonia = String(p.colonia || "").trim();
+  const delegacion = String(p.delegacion || "MEXICALI").trim();
+  const num = String(numof || p.numof || "").trim();
+  let txt = calle;
+  if (num) txt += ", No. " + num + "- ";
+  else txt += ", ";
+  if (colonia) txt += "Col/Fracc. " + colonia;
+  if (delegacion) txt += ", Delegacion " + delegacion;
+  return txt.toUpperCase();
+}
+
+async function resolverNombreContribuyenteFicha(clave, p) {
+  const claveNorm = String(clave || "").trim().toUpperCase();
+  try {
+    if (typeof fetchPropietariosPredioCached === "function") {
+      const tit = await fetchPropietariosPredioCached(claveNorm);
+      if (tit?.propietarios?.length) {
+        const props = tit.propietarios;
+        const nombre = props.map(x => x.nombre_completo || x.razon_social || x.nombre).filter(Boolean).join(" / ");
+        if (nombre) {
+          if (props.length > 1 || Number(tit.total || 0) > 1) {
+            const base = String(nombre).split(" / ")[0];
+            return /\bY\s+COP\.?\b/i.test(nombre) ? nombre.toUpperCase() : (base + " Y COP.").toUpperCase();
+          }
+          return String(nombre).toUpperCase();
+        }
+      }
+    }
+  } catch (e) {}
+
+  const nombre = String(p?.nombre_completo || p?.propietario || "—").trim();
+  return nombre ? nombre.toUpperCase() : "—";
+}
+
+async function obtenerImagenStreetViewFicha(lat, lon, heading = 0, pitch = 0) {
+  if (lat == null || lon == null || Number.isNaN(Number(lat)) || Number.isNaN(Number(lon))) return null;
+  const url =
+    "https://maps.googleapis.com/maps/api/streetview?size=800x450" +
+    "&location=" + encodeURIComponent(Number(lat).toFixed(6) + "," + Number(lon).toFixed(6)) +
+    "&fov=90&pitch=" + encodeURIComponent(String(Math.round(pitch))) +
+    "&heading=" + encodeURIComponent(String(Math.round(heading) % 360)) +
+    "&source=outdoor";
+  try {
+    const img = await cargarImagenPDF(url);
+    if (!img || img.width < 50) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    return canvas.toDataURL("image/png");
+  } catch (e) {
+    return null;
+  }
+}
+
+async function cargarDatosFichaCatastral(clave) {
+  const claveNorm = String(clave || "").trim().toUpperCase();
+  if (!claveNorm) return null;
+
+  let feature = null;
+  try {
+    const r = await fetch(`${API}/padron/${encodeURIComponent(claveNorm)}/ficha?_=${Date.now()}`, {
+      cache: "no-store",
+      headers: typeof authHeaders === "function" ? authHeaders() : {}
+    });
+    if (r.ok) feature = await r.json();
+  } catch (e) {
+    console.warn("No se pudo cargar ficha:", e);
+  }
+
+  const p = feature?.properties || window.predioSeleccionado || {};
+  const seg = segmentosClaveFicha(claveNorm);
+  const nombre = await resolverNombreContribuyenteFicha(claveNorm, p);
+  const supDoc = Number(p.sup_documental || 0);
+  const supFis = Number(p.sup_fisica || supDoc || 0);
+  const anioValor = typeof ANIO_FISCAL_ZONA_HOMOGENEA !== "undefined" ? ANIO_FISCAL_ZONA_HOMOGENEA : 2026;
+
+  let valorUnit = null;
+  let valorFiscal = null;
+  if (typeof calcularValoresFiscalesCedula === "function") {
+    const vf = await calcularValoresFiscalesCedula(p);
+    valorUnit = vf.valorUnit;
+    valorFiscal = vf.valorFiscal;
+  } else {
+    const sup = supDoc || supFis;
+    const v26 = Number(p.valor2026 || 0);
+    if (v26 > 0 && sup > 0) {
+      valorUnit = v26 >= 500 ? v26 : Math.round((v26 / sup) * 100) / 100;
+      valorFiscal = Math.round(valorUnit * sup * 100) / 100;
+    }
+  }
+
+  const centroide = await resolverCentroidePredioFicha(claveNorm, feature);
+  const usuario = typeof obtenerUsuarioSesion === "function" ? obtenerUsuarioSesion() : null;
+
+  return {
+    clave: claveNorm,
+    feature,
+    p,
+    seg,
+    nombre,
+    colonia: String(p.colonia || "—").trim().toUpperCase(),
+    calle: String(p.calle || "—").trim().toUpperCase(),
+    numof: String(p.numof || "—").trim(),
+    supDoc,
+    supFis,
+    uso: String(p.descripcion_uso || "—").trim().toUpperCase(),
+    zonah: String(p.zona_homogenea || p.zonah || "—").trim().toUpperCase(),
+    valorUnit,
+    valorFiscal,
+    valorUnitTxt: valorUnit != null
+      ? ("$" + Number(valorUnit).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+      : "—",
+    anioValor,
+    lat: centroide.lat,
+    lon: centroide.lon,
+    geometry: centroide.geometry,
+    fechaConsulta: new Date().toLocaleString("es-MX"),
+    impresoPor: String(usuario?.usuario || usuario?.nombre || "consulta").trim(),
+    tieneAdeudo: Number(p.adeudo_total || 0) > 0
+  };
+}
+
+async function exportarFichaCatastralPdf(datos, imagenes = {}) {
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert("No se cargó la librería jsPDF. Revise su conexión e intente recargar con Ctrl+F5.");
+    throw new Error("jsPDF no disponible");
+  }
+  if (!datos) {
+    throw new Error("Sin datos del predio");
+  }
+
+  const streetImg = imagenes.streetImg || null;
+  const mapaImg = imagenes.mapaImg || null;
+  const logoImg = typeof obtenerLogoInstitucionalDataUrl === "function"
+    ? await obtenerLogoInstitucionalDataUrl()
+    : null;
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const guinda = [112, 51, 65];
+  const grisTexto = [40, 48, 60];
+  const margen = 10;
+  const midX = pageW / 2;
+
+  doc.setFillColor(...guinda);
+  doc.rect(0, 0, pageW, 28, "F");
+  if (logoImg) {
+    try { doc.addImage(logoImg, "PNG", margen, 4, 30, 14); } catch (e) {}
+  }
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text("FICHA CATASTRAL", logoImg ? 44 : margen, 11);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.text("Consulta Catastral Mexicali", logoImg ? 44 : margen, 17);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text("Clave Catastral: " + datos.clave, pageW - margen, 12, { align: "right" });
+
+  doc.setTextColor(...grisTexto);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text("Fecha y hora de consulta: " + datos.fechaConsulta, margen, 34);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...guinda);
+  doc.text("Nombre Registrado:", margen, 41);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...grisTexto);
+  const nomX = margen + doc.getTextWidth("Nombre Registrado: ") + 1;
+  doc.text(datos.nombre, nomX, 41);
+  doc.line(nomX, 41.7, nomX + doc.getTextWidth(datos.nombre), 41.7);
+
+  function celdaPdf(label, value, x, y, w) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(label, x, y);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...grisTexto);
+    doc.text(doc.splitTextToSize(String(value || "—"), w - 2), x, y + 4.5);
+  }
+
+  const yGrid1 = 48;
+  const colW = (pageW - margen * 2) / 4;
+  celdaPdf("COLONIA", datos.colonia, margen, yGrid1, colW);
+  celdaPdf("CALLE", datos.calle, margen + colW, yGrid1, colW);
+  celdaPdf("NÚMERO OFICIAL", datos.numof, margen + colW * 2, yGrid1, colW);
+  celdaPdf("SUPERFICIE", datos.supDoc ? (Number(datos.supDoc).toFixed(2) + " m²") : "—", margen + colW * 3, yGrid1, colW);
+
+  const yGrid2 = 60;
+  celdaPdf("MANZANA", datos.seg.manzana, margen, yGrid2, colW);
+  celdaPdf("LOTE", datos.seg.lote, margen + colW, yGrid2, colW);
+  celdaPdf("ZONA HOMOGÉNEA", datos.zonah, margen + colW * 2, yGrid2, colW);
+  celdaPdf("VALOR /M²", datos.valorUnitTxt, margen + colW * 3, yGrid2, colW);
+
+  celdaPdf("USO PREDIAL", datos.uso, margen, 72, pageW - margen * 2);
+
+  doc.setDrawColor(...guinda);
+  doc.setLineWidth(0.25);
+  doc.line(margen, 46, pageW - margen, 46);
+  doc.line(margen, 58, pageW - margen, 58);
+  doc.line(margen, 70, pageW - margen, 70);
+
+  function marcoImagenPdf(yTop, h, titulo, imgData, vacioMsg, x = margen, w = pageW - margen * 2) {
+    doc.setDrawColor(...guinda);
+    doc.setLineWidth(0.35);
+    doc.setFillColor(252, 252, 253);
+    doc.roundedRect(x, yTop, w, h, 1.5, 1.5, "FD");
+    doc.setFillColor(...guinda);
+    doc.rect(x, yTop, w, 6, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text(titulo, x + 3, yTop + 4.2);
+    const innerY = yTop + 7;
+    const innerH = h - 8;
+    if (imgData) {
+      try {
+        doc.addImage(imgData, "PNG", x + 1.5, innerY, w - 3, innerH);
+      } catch (e) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(120, 120, 120);
+        doc.text("Imagen no disponible.", x + w / 2, innerY + innerH / 2, { align: "center" });
+      }
+    } else {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      doc.text(vacioMsg, x + w / 2, innerY + innerH / 2, { align: "center" });
+    }
+  }
+
+  const yMedia = 78;
+  const mediaW = pageW - margen * 2;
+  const hStreet = streetImg ? 52 : 0;
+  const hMapa = 78;
+  if (streetImg) {
+    marcoImagenPdf(
+      yMedia,
+      hStreet,
+      "VISTA DE CALLE",
+      streetImg,
+      "Sin vista de calle disponible.",
+      margen,
+      mediaW
+    );
+  }
+  const yMapa = streetImg ? yMedia + hStreet + 4 : yMedia;
+  marcoImagenPdf(
+    yMapa,
+    hMapa,
+    "LOCALIZACIÓN CARTOGRÁFICA",
+    mapaImg,
+    "Sin croquis cartográfico.",
+    margen,
+    mediaW
+  );
+
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(7);
+  doc.setTextColor(100, 110, 125);
+  doc.text("Documento generado por el Sistema de Gestión Catastral · " + datos.impresoPor, margen, pageH - 10);
+  doc.text(new Date().toLocaleDateString("es-MX"), pageW - margen, pageH - 10, { align: "right" });
+
+  doc.save("ficha_catastral_" + datos.clave + ".pdf");
+}
+
+window.cargarDatosFichaCatastral = cargarDatosFichaCatastral;
+window.exportarFichaCatastralPdf = exportarFichaCatastralPdf;
+
+async function generarFichaCatastralGeneralPDF() {
+  if (typeof abrirVentanaFichaCatastralGeneral === "function") {
+    return abrirVentanaFichaCatastralGeneral();
+  }
+  if (typeof abrirPreviewFichaCatastralGeneral === "function") {
+    return abrirPreviewFichaCatastralGeneral();
+  }
+
+  const clave = String(
+    window.predioSeleccionado?.clave_catastral ||
+    (typeof claveSeleccionadaActual !== "undefined" ? claveSeleccionadaActual : "") ||
+    ""
+  ).trim().toUpperCase();
+
+  if (!clave) {
+    alert("Seleccione un predio en el panel de análisis para generar la ficha.");
+    return;
+  }
+
+  const datos = await cargarDatosFichaCatastral(clave);
+  if (!datos) return;
+
+  let streetImg = await obtenerImagenStreetViewFicha(datos.lat, datos.lon);
+  let mapaImg = await generarCroquisWMSPDF();
+  await exportarFichaCatastralPdf(datos, { streetImg, mapaImg });
+}
+
+async function resolverCentroidePredioFicha(clave, feature) {
+  let geom = null;
+  if (feature?.geometry) {
+    try {
+      const format = new ol.format.GeoJSON({
+        dataProjection: "EPSG:4326",
+        featureProjection: "EPSG:3857"
+      });
+      geom = format.readFeature(feature).getGeometry();
+    } catch (e) {}
+  }
+  if (!geom && typeof resolverGeometriaPredioPopup === "function") {
+    try { geom = await resolverGeometriaPredioPopup(clave); } catch (e) {}
+  }
+  if (!geom && typeof obtenerGeometriaPredioSeleccionado === "function") {
+    geom = obtenerGeometriaPredioSeleccionado(clave);
+  }
+  if (!geom) return { lat: null, lon: null, geometry: null };
+
+  try {
+    let center3857;
+    if (typeof geom.getInteriorPoint === "function") {
+      center3857 = geom.getInteriorPoint().getCoordinates();
+    } else {
+      center3857 = ol.extent.getCenter(geom.getExtent());
+    }
+    const [lon, lat] = ol.proj.toLonLat(center3857);
+    return { lat, lon, geometry: geom };
+  } catch (e) {
+    return { lat: null, lon: null, geometry: geom };
+  }
+}
+
+window.generarFichaCatastralGeneralPDF = generarFichaCatastralGeneralPDF;
+window.capturarMapaOlParaPDF = capturarMapaOlParaPDF;
 
 async function generarPDFInstitucional() {
   const btn = document.getElementById("btnPdfInstitucional");
