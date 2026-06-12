@@ -207,6 +207,39 @@ body.modo-gestion-catastral #tabConsulta #ficha {
   display: none !important;
 }
 
+/* Ocultar panel lateral (botón ×) — prioridad sobre reglas de ancho fijo */
+body.panel-oculto-activo .app-institucional #panel,
+body.panel-oculto-activo.modo-gestion-catastral .app-institucional #panel,
+body.panel-oculto-activo.modo-gestion-catastral #panel.panel-modern.panel-oculto,
+body.panel-oculto-activo #panel.panel-modern.panel-oculto {
+  display: none !important;
+  flex: 0 0 0 !important;
+  width: 0 !important;
+  max-width: 0 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  border: 0 !important;
+  transform: none !important;
+}
+
+body.panel-oculto-activo .app-institucional .btn-mostrar-panel {
+  display: inline-flex !important;
+}
+
+.app-institucional .panel-header-sidebar {
+  position: relative !important;
+}
+
+.app-institucional .panel-close-btn,
+.app-institucional #btnOcultarPanel {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  z-index: 12 !important;
+}
+
 /* ══════════════ POP-UP PREDIO (estilo legacy) ══════════════ */
 .popup-predio-workspace {
   position: fixed;

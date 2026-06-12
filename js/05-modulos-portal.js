@@ -183,6 +183,7 @@ function entrarModuloPortal(moduloId) {
 
   setTimeout(() => {
     if (moduloId === "gestion-catastral") ocultarTabsExtraGestionCatastral();
+    if (typeof inicializarBotonOcultarPanel === "function") inicializarBotonOcultarPanel();
     if (typeof map !== "undefined" && map) map.updateSize();
     if (typeof actualizarLayoutPrincipal === "function") actualizarLayoutPrincipal();
     if (typeof _iniciarDashboardsPostLogin === "function") {
@@ -984,8 +985,20 @@ function tabIdToDomId(tabId) {
   return tabId.split("-").map(s => s.charAt(0).toUpperCase() + s.slice(1)).join("");
 }
 
-function generarFichaCatastralGeneral() {
-  alert("La generación de Ficha Catastral General (PDF) se desarrollará en una fase posterior.");
+function capturarPopupMiniMapParaPDF() {
+  if (typeof capturarMapaOlParaPDF !== "function" || !popupMiniMap) return Promise.resolve(null);
+  try {
+    popupMiniMap.updateSize();
+    popupMiniMap.renderSync();
+  } catch (e) {}
+  return capturarMapaOlParaPDF(popupMiniMap, 3500);
+}
+
+async function generarFichaCatastralGeneral() {
+  if (typeof generarFichaCatastralGeneralPDF === "function") {
+    return generarFichaCatastralGeneralPDF();
+  }
+  alert("El generador PDF no está disponible. Recargue la página e intente de nuevo.");
 }
 
 function mostrarPopupPredioTab(tabId) {
@@ -1048,6 +1061,7 @@ window.abrirPopupPredioWorkspace = abrirPopupPredioWorkspace;
 window.cerrarPopupPredioWorkspace = cerrarPopupPredioWorkspace;
 window.mostrarPopupPredioTab = mostrarPopupPredioTab;
 window.navegarPopupPredio = navegarPopupPredio;
+window.capturarPopupMiniMapParaPDF = capturarPopupMiniMapParaPDF;
 window.generarFichaCatastralGeneral = generarFichaCatastralGeneral;
 window.togglePopupMiniCapasMenu = togglePopupMiniCapasMenu;
 window.setPopupMiniBaseLayer = setPopupMiniBaseLayer;

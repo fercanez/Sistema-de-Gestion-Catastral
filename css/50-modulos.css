@@ -458,10 +458,9 @@ body.analisis-zonas-activo {
   font-size: 9px !important;
 }
 
-/* Gestión Catastral: panel lateral siempre visible (Consulta + Capas) */
-body.modo-gestion-catastral .app-institucional #panel,
-body.modo-gestion-catastral .app-institucional #panel.panel-oculto,
-body.modo-gestion-catastral #panel.panel-oculto {
+/* Gestión Catastral: panel lateral visible por defecto (Consulta + Capas); el botón × puede ocultarlo */
+body.modo-gestion-catastral:not(.panel-oculto-activo) .app-institucional #panel,
+body.modo-gestion-catastral:not(.panel-oculto-activo) #panel {
   display: flex !important;
   flex: 0 0 var(--inst-sidebar-w, 365px) !important;
   width: var(--inst-sidebar-w, 365px) !important;

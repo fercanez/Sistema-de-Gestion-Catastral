@@ -10,8 +10,8 @@
   <link rel="stylesheet" href="css/20-ficha.css?v=20260610_v125_portal">
   <link rel="stylesheet" href="css/30-tablas.css?v=20260610_v125_portal">
   <link rel="stylesheet" href="css/40-modales.css?v=20260610_v125_portal">
-  <link rel="stylesheet" href="css/50-modulos.css?v=20260609_v149_ocultar_tabs">
-  <link rel="stylesheet" href="css/55-modulos-portal.css?v=20260609_v149_ocultar_tabs">
+  <link rel="stylesheet" href="css/50-modulos.css?v=20260611_v150_panel_ocultar">
+  <link rel="stylesheet" href="css/55-modulos-portal.css?v=20260611_v151_panel_ocultar">
 </head>
 
 <body>
@@ -197,6 +197,7 @@
 <div id="panel" class="panel-modern">
   <div class="panel-header panel-header-sidebar">
     <div class="panel-sidebar-label">Panel de trabajo</div>
+    <button type="button" id="btnOcultarPanel" class="panel-close-btn" title="Ocultar panel" aria-label="Ocultar panel de trabajo">×</button>
   </div>
 
   <div class="tabs tabs-modulos-trabajo">
@@ -647,7 +648,7 @@
       <div id="popupPredioResumen" class="popup-predio-resumen"></div>
       <div id="popupPredioClave" class="popup-predio-clave">—</div>
       <div id="popupPredioNavInfo" class="popup-predio-nav-info"></div>
-      <button type="button" class="popup-predio-btn-ficha" onclick="generarFichaCatastralGeneral()" title="Próximamente">📄 Ficha catastral general</button>
+      <button type="button" class="popup-predio-btn-ficha" onclick="generarFichaCatastralGeneral()" title="Generar Ficha Catastral General en PDF">📄 Ficha catastral general</button>
       <button type="button" class="popup-predio-btn-cerrar" onclick="cerrarPopupPredioWorkspace()" title="Cerrar">×</button>
     </header>
     <nav class="popup-predio-tabs" aria-label="Pestañas del predio">
@@ -946,11 +947,11 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/00-nucleo.js?v=20260609_v144_mapa_colonias"></script>
-<script src="js/10-mapa.js?v=20260609_v148_solo_tabs"></script>
+<script src="js/10-mapa.js?v=20260611_v151_panel_ocultar"></script>
 <script src="js/20-ficha.js?v=20260609_v142_ficha_rapida"></script>
-<script src="js/40-pdf.js?v=20260610_v125_portal"></script>
+<script src="js/40-pdf.js?v=20260611_v152_ficha_general"></script>
 <script src="js/30-busqueda.js?v=20260609_v145_panel_capas"></script>
-<script src="js/05-modulos-portal.js?v=20260609_v149_ocultar_tabs"></script>
+<script src="js/05-modulos-portal.js?v=20260611_v152_ficha_general"></script>
 <script src="js/06-construcciones-medicion.js?v=20260610_v140_snap_vecinos"></script>
 <script src="js/50-admin.js?v=20260610_v125_portal"></script>
 <script src="js/60-propietarios.js?v=20260609_v143_ficha_rapida"></script>

@@ -160,10 +160,6 @@ function irBreadcrumbInicioInstitucional() {
 
 function actualizarLayoutPrincipal() {
   const panel = document.getElementById("panel");
-  if (typeof enModoGestionCatastral === "function" && enModoGestionCatastral() && panel) {
-    panel.classList.remove("panel-oculto");
-    document.body.classList.remove("panel-oculto-activo");
-  }
   const tabla = document.getElementById("tablaResultadosFlotante");
   const ficha = document.getElementById("fichaFlotante");
   const oculto = panel?.classList.contains("panel-oculto");
@@ -179,23 +175,21 @@ function actualizarLayoutPrincipal() {
 }
 
 function inicializarBotonOcultarPanel() {
-  const header = document.querySelector("#panel .panel-header");
-  if (!header || document.getElementById("btnOcultarPanel")) return;
-
-  const btn = document.createElement("button");
-  btn.id = "btnOcultarPanel";
-  btn.type = "button";
-  btn.innerHTML = "×";
-  btn.title = "Ocultar panel";
-  btn.className = "panel-close-btn";
-  btn.onclick = ocultarPanelPrincipal;
-  header.appendChild(btn);
+  const btn = document.getElementById("btnOcultarPanel");
+  if (!btn || btn.dataset.wired === "1") return;
+  btn.dataset.wired = "1";
+  btn.addEventListener("click", function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    ocultarPanelPrincipal();
+  });
 }
 
 function ocultarPanelPrincipal() {
   const panel = document.getElementById("panel");
   const btn = document.getElementById("btnMostrarPanel");
   if (panel) panel.classList.add("panel-oculto");
+  document.body.classList.add("panel-oculto-activo");
   if (btn) btn.classList.remove("oculto");
   actualizarLayoutPrincipal();
 }
@@ -204,9 +198,13 @@ function mostrarPanelPrincipal() {
   const panel = document.getElementById("panel");
   const btn = document.getElementById("btnMostrarPanel");
   if (panel) panel.classList.remove("panel-oculto");
+  document.body.classList.remove("panel-oculto-activo");
   if (btn) btn.classList.add("oculto");
   actualizarLayoutPrincipal();
 }
+
+window.ocultarPanelPrincipal = ocultarPanelPrincipal;
+window.mostrarPanelPrincipal = mostrarPanelPrincipal;
 
 function sincronizarCapasWmsDesdeControles() {
   const chkPred = document.getElementById("chkPrediosWms");
