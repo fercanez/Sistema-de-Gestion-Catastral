@@ -263,6 +263,7 @@ def obtener_expediente_integral(clave: str, usuario_actual: dict = Depends(obten
                 vei.tiene_cedula,
                 vei.tiene_historial,
                 vei.observaciones,
+                ex.fecha_alta,
                 tit.id_persona,
                 tit.tipo_persona,
                 tit.rfc,
@@ -275,6 +276,8 @@ def obtener_expediente_integral(clave: str, usuario_actual: dict = Depends(obten
                     ELSE ST_AsGeoJSON(ST_Transform(vei.geom, 4326))::json
                 END AS geometry
             FROM catastro.v_expediente_integral vei
+            LEFT JOIN catastro.expedientes ex
+                ON UPPER(TRIM(ex.clave_catastral)) = UPPER(TRIM(vei.clave_catastral))
             LEFT JOIN catastro.v_titularidad_predio tit
                 ON UPPER(TRIM(tit.clave_catastral)) = UPPER(TRIM(vei.clave_catastral))
             WHERE UPPER(TRIM(vei.clave_catastral)) = UPPER(TRIM(%s))

@@ -144,21 +144,55 @@ def busqueda_avanzada(
             and not numero_txt
         )
         if solo_clave:
-            clave_exacta = clave_stripped.upper()
+            clave_norm = clave_stripped.upper()
+
+            # Clave completa: igualdad exacta (rápida).
+            if len(clave_norm) >= 8:
+                cur.execute(f"""
+                    {SQL_SELECT_PADRON_UNICO}
+                    {SQL_FROM_PADRON_UNICO}
+                    WHERE UPPER(TRIM(p.clave_catastral)) = %s
+                    LIMIT 1;
+                """, (clave_norm,))
+                row = cur.fetchone()
+                cur.close()
+                conn.close()
+                return {
+                    "total": 1 if row else 0,
+                    "limite": limite,
+                    "cargados": 1 if row else 0,
+                    "resultados": [row] if row else [],
+                }
+
+            # Prefijo de clave / manzana / sector (ej. ST311 → ST311xxx).
+            clave_like = clave_norm + "%"
+            where_prefijo = "WHERE UPPER(p.clave_catastral) LIKE %s"
+
+            cur.execute(f"""
+                SELECT COUNT(*) AS total
+                {SQL_FROM_PADRON_UNICO}
+                {where_prefijo};
+            """, (clave_like,))
+            total_row = cur.fetchone()
+            total = total_row["total"] if total_row else 0
+
             cur.execute(f"""
                 {SQL_SELECT_PADRON_UNICO}
                 {SQL_FROM_PADRON_UNICO}
-                WHERE UPPER(TRIM(p.clave_catastral)) = %s
-                LIMIT 1;
-            """, (clave_exacta,))
-            row = cur.fetchone()
+                {where_prefijo}
+                ORDER BY p.clave_catastral
+                LIMIT %s;
+            """, (clave_like, limite))
+
+            rows = cur.fetchall()
             cur.close()
             conn.close()
+
             return {
-                "total": 1 if row else 0,
+                "total": total,
                 "limite": limite,
-                "cargados": 1 if row else 0,
-                "resultados": [row] if row else [],
+                "cargados": len(rows),
+                "resultados": rows,
             }
 
         clave_like = clave_stripped + "%"
@@ -528,11 +562,18 @@ def predios_cercanos(
                 p.id,
                 p.clave_catastral,
                 p.estatus,
-                col.nombre_colonia AS colonia,
+                COALESCE(NULLIF(TRIM(pad.colonia), ''), col.nombre_colonia) AS colonia,
                 p.cp,
+                TRIM(COALESCE(pad.numof, '')) AS numof,
+                TRIM(COALESCE(pad.calle, '')) AS calle,
+                TRIM(COALESCE(pad.numint, '')) AS numint,
+                TRIM(COALESCE(pad.letra, '')) AS letra,
+                ROUND(ST_Distance(ST_PointOnSurface(p.geom), pt.geom)::numeric, 1)::float AS distancia_m,
                 p.sup_documental AS superficie,
                 ST_AsGeoJSON(ST_Transform(p.geom, 4326))::json AS geometry
             FROM catastro.predios p
+            LEFT JOIN catalogos.padron_2026 pad
+                ON UPPER(TRIM(pad.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
             LEFT JOIN catalogos.cat_colonias col
                 ON p.colonia_id = col.id,
                 punto pt
@@ -561,6 +602,198 @@ def predios_cercanos(
             "features": features
         }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/padron/{clave}/numeros-oficiales-cercanos")
+def numeros_oficiales_cercanos(
+    clave: str,
+    limite_misma_calle: int = Query(25, ge=1, le=80),
+    limite_otras_calles: int = Query(10, ge=0, le=50),
+    usuario_actual: dict = Depends(obtener_usuario_actual),
+):
+    """Predios con numero oficial: prioriza misma calle y reparte el resto en calles vecinas."""
+    return _numeros_oficiales_cercanos_payload(clave, limite_misma_calle, limite_otras_calles)
+
+
+@router.get("/predios/{clave}/numeros-oficiales-cercanos")
+def numeros_oficiales_cercanos_predio(
+    clave: str,
+    limite_misma_calle: int = Query(25, ge=1, le=80),
+    limite_otras_calles: int = Query(10, ge=0, le=50),
+    usuario_actual: dict = Depends(obtener_usuario_actual),
+):
+    """Alias del endpoint de numeros oficiales cercanos."""
+    return _numeros_oficiales_cercanos_payload(clave, limite_misma_calle, limite_otras_calles)
+
+
+def _numeros_oficiales_cercanos_payload(clave: str, limite_misma_calle: int, limite_otras_calles: int):
+    clave_norm = clave.upper().strip()
+    if not clave_norm:
+        raise HTTPException(status_code=400, detail="Clave catastral requerida")
+
+    try:
+        limite_misma_calle = min(max(limite_misma_calle, 1), 80)
+        limite_otras_calles = min(max(limite_otras_calles, 0), 50)
+        conn = get_conn()
+        cur = conn.cursor()
+
+        cur.execute("""
+            WITH ref AS (
+                SELECT
+                    UPPER(TRIM(p.clave_catastral)) AS clave_catastral,
+                    g.geom,
+                    ST_PointOnSurface(g.geom) AS centro,
+                    UPPER(TRIM(COALESCE(p.calle, ''))) AS calle_norm,
+                    TRIM(COALESCE(p.numof, '')) AS numof,
+                    TRIM(COALESCE(p.numint, '')) AS numint,
+                    TRIM(COALESCE(p.letra, '')) AS letra,
+                    ''::text AS cp,
+                    TRIM(COALESCE(p.calle, '')) AS calle,
+                    TRIM(COALESCE(p.colonia, '')) AS colonia,
+                    ST_AsGeoJSON(ST_Transform(g.geom, 4326))::json AS geometry
+                FROM catalogos.padron_2026 p
+                INNER JOIN catastro.predios g
+                    ON UPPER(TRIM(g.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
+                WHERE UPPER(TRIM(p.clave_catastral)) = %s
+                  AND g.geom IS NOT NULL
+                LIMIT 1
+            ),
+            candidatos AS (
+                SELECT
+                    UPPER(TRIM(p.clave_catastral)) AS clave_catastral,
+                    TRIM(COALESCE(p.numof, '')) AS numof,
+                    TRIM(COALESCE(p.numint, '')) AS numint,
+                    TRIM(COALESCE(p.letra, '')) AS letra,
+                    ''::text AS cp,
+                    TRIM(COALESCE(p.calle, '')) AS calle,
+                    TRIM(COALESCE(p.colonia, '')) AS colonia,
+                    ROUND(ST_Distance(ST_PointOnSurface(g.geom), ref.centro)::numeric, 1)::float AS distancia_m,
+                    (
+                        ref.calle_norm <> ''
+                        AND UPPER(TRIM(COALESCE(p.calle, ''))) = ref.calle_norm
+                    ) AS misma_calle,
+                    ST_AsGeoJSON(ST_Transform(g.geom, 4326))::json AS geometry
+                FROM catalogos.padron_2026 p
+                INNER JOIN catastro.predios g
+                    ON UPPER(TRIM(g.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
+                CROSS JOIN ref
+                WHERE g.geom IS NOT NULL
+                  AND UPPER(TRIM(p.clave_catastral)) <> ref.clave_catastral
+                  AND NULLIF(TRIM(COALESCE(p.numof, '')), '') IS NOT NULL
+            ),
+            misma_calle AS (
+                SELECT *
+                FROM candidatos
+                WHERE misma_calle
+                ORDER BY distancia_m
+                LIMIT %s
+            ),
+            otras_calles AS (
+                SELECT c.*
+                FROM candidatos c
+                WHERE NOT c.misma_calle
+                  AND NOT EXISTS (
+                      SELECT 1 FROM misma_calle m
+                      WHERE m.clave_catastral = c.clave_catastral
+                  )
+                ORDER BY c.distancia_m
+                LIMIT %s
+            ),
+            cercanos AS (
+                SELECT * FROM misma_calle
+                UNION ALL
+                SELECT * FROM otras_calles
+            )
+            SELECT
+                'consultado'::text AS tipo,
+                ref.clave_catastral,
+                ref.numof,
+                ref.numint,
+                ref.letra,
+                ref.cp,
+                ref.calle,
+                ref.colonia,
+                0::float AS distancia_m,
+                TRUE AS misma_calle,
+                ref.geometry
+            FROM ref
+            UNION ALL
+            SELECT
+                'cercano'::text AS tipo,
+                c.clave_catastral,
+                c.numof,
+                c.numint,
+                c.letra,
+                c.cp,
+                c.calle,
+                c.colonia,
+                c.distancia_m,
+                c.misma_calle,
+                c.geometry
+            FROM cercanos c;
+        """, (clave_norm, limite_misma_calle, limite_otras_calles))
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        if not rows:
+            raise HTTPException(status_code=404, detail="Predio no encontrado")
+
+        consultado = None
+        cercanos = []
+        features = []
+
+        for row in rows:
+            item = {
+                "clave_catastral": row.get("clave_catastral"),
+                "numof": row.get("numof") or "",
+                "numint": row.get("numint") or "",
+                "letra": row.get("letra") or "",
+                "cp": row.get("cp") or "",
+                "calle": row.get("calle") or "",
+                "colonia": row.get("colonia") or "",
+                "distancia_m": float(row.get("distancia_m") or 0),
+                "misma_calle": bool(row.get("misma_calle")),
+                "geometry": row.get("geometry"),
+            }
+            geometry = item.pop("geometry")
+            props = dict(item)
+            props["es_consultado"] = row.get("tipo") == "consultado"
+            if row.get("tipo") == "consultado":
+                consultado = item
+            else:
+                cercanos.append(item)
+            if geometry:
+                features.append({
+                    "type": "Feature",
+                    "geometry": geometry,
+                    "properties": props,
+                })
+
+        if consultado is None:
+            raise HTTPException(status_code=404, detail="Predio sin geometría cartográfica")
+
+        total_misma = sum(1 for c in cercanos if c.get("misma_calle"))
+        total_otras = len(cercanos) - total_misma
+
+        return {
+            "clave_catastral": clave_norm,
+            "limite_misma_calle": limite_misma_calle,
+            "limite_otras_calles": limite_otras_calles,
+            "total_misma_calle": total_misma,
+            "total_otras_calles": total_otras,
+            "total": len(cercanos),
+            "consultado": consultado,
+            "cercanos": cercanos,
+            "type": "FeatureCollection",
+            "features": features,
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

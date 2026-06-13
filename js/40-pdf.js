@@ -620,6 +620,7 @@ async function exportarFichaCatastralPdf(datos, imagenes = {}) {
   doc.save("ficha_catastral_" + datos.clave + ".pdf");
 }
 
+window.capturarMapaOlParaPDF = capturarMapaOlParaPDF;
 window.cargarDatosFichaCatastral = cargarDatosFichaCatastral;
 window.exportarFichaCatastralPdf = exportarFichaCatastralPdf;
 

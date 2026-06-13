@@ -188,6 +188,61 @@ async function pedirBusquedaAvanzada(clave, nombre, colonia, calle, numero, limi
   return data;
 }
 
+function limpiarBusquedaCatastral() {
+  ["claveInput", "nombreInput", "coloniaInput", "calleInput", "numeroInput"].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+
+  const div = document.getElementById("resultadosBusqueda");
+  if (div) div.innerHTML = "";
+
+  const aviso = document.getElementById("avisoTotalResultados");
+  if (aviso) {
+    aviso.style.display = "none";
+    aviso.innerHTML = "";
+  }
+
+  const textoInicial = "Sin búsqueda realizada";
+  const general = document.getElementById("contadorBusquedaGeneral");
+  if (general) {
+    general.innerText = textoInicial;
+    general.classList.remove("contador-ok", "contador-warn");
+  }
+  ["contadorClave", "contadorNombre", "contadorDireccion"].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerText = textoInicial;
+    el.classList.remove("contador-ok", "contador-warn");
+  });
+
+  if (typeof limpiarResultadosZoom === "function") limpiarResultadosZoom();
+  if (typeof vectorSource !== "undefined" && vectorSource) vectorSource.clear();
+  if (typeof renderizarTablaResultados === "function") renderizarTablaResultados([], 0);
+  if (typeof cerrarTablaResultados === "function") cerrarTablaResultados();
+
+  if (typeof seleccionPredioSeq !== "undefined") seleccionPredioSeq++;
+  if (typeof claveSeleccionadaActual !== "undefined") claveSeleccionadaActual = "";
+  window.predioSeleccionado = null;
+  if (window._cacheFeaturePredioPorClave) window._cacheFeaturePredioPorClave = {};
+
+  if (typeof cerrarPopupPredioWorkspace === "function") cerrarPopupPredioWorkspace();
+  if (typeof cerrarFichaFlotante === "function") cerrarFichaFlotante();
+  if (typeof destruirPopupNumerosOficiales === "function") destruirPopupNumerosOficiales();
+
+  const ficha = document.getElementById("ficha");
+  if (ficha) {
+    ficha.innerHTML = `<div class="ficha-vacia-consulta">Use la búsqueda catastral para localizar un predio.</div>`;
+  }
+
+  if (typeof actualizarBreadcrumbPredio === "function") actualizarBreadcrumbPredio(null);
+  if (typeof sincronizarClavesMovimientoConPredioActivo === "function") {
+    sincronizarClavesMovimientoConPredioActivo();
+  }
+
+  document.getElementById("claveInput")?.focus();
+}
+
 async function buscarAvanzado() {
   const clave = document.getElementById("claveInput").value.trim();
   const nombre = document.getElementById("nombreInput").value.trim();
@@ -293,6 +348,9 @@ function registrarEnterBusquedas() {
     }
   });
 }
+
+window.limpiarBusquedaCatastral = limpiarBusquedaCatastral;
+window.buscarAvanzado = buscarAvanzado;
 
 async function fetchFeaturePredioOpcional(url) {
   try {

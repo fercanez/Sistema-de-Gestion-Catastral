@@ -1162,27 +1162,6 @@ async function pintarPopupTabArchivo(clave, p) {
   await cargarFotografiasArchivo(claveNorm, p);
 }
 
-function pintarPopupTabNumerosOficiales(p) {
-  const panel = document.getElementById("popupTabNumerosOficiales");
-  if (!panel) return;
-  panel.innerHTML = `
-    <div class="popup-datos-grid popup-datos-grid-legacy popup-datos-grid-2col">
-      <div class="popup-datos-form popup-legacy-form">
-        ${popupCampo("Número oficial", p?.numof)}
-        ${popupCampo("Número interior", p?.numint)}
-        ${popupCampo("Letra", p?.letra)}
-        ${popupCampo("Código postal", p?.cp)}
-        ${popupCampo("Calle", p?.calle)}
-        ${popupCampo("Colonia", p?.colonia)}
-      </div>
-      <div class="popup-mapa-placeholder popup-legacy-panel">
-        <strong>Plano de número oficial</strong>
-        <span>Visualización cartográfica del lote con número oficial — integración en curso.</span>
-      </div>
-    </div>
-  `;
-}
-
 function pintarPopupTabColonia(p) {
   const panel = document.getElementById("popupTabColonia");
   if (!panel) return;
@@ -1222,6 +1201,9 @@ async function pintarPopupPredioTab(tabId, p) {
   if (tabAnterior === "construcciones" && tabId !== "construcciones") {
     if (typeof destruirPopupConstruccionesMedicion === "function") destruirPopupConstruccionesMedicion();
   }
+  if (tabAnterior === "numeros-oficiales" && tabId !== "numeros-oficiales") {
+    if (typeof destruirPopupNumerosOficiales === "function") destruirPopupNumerosOficiales();
+  }
   document.querySelectorAll(".popup-predio-tab").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.tab === tabId);
   });
@@ -1238,8 +1220,15 @@ async function pintarPopupPredioTab(tabId, p) {
       pintarPopupTabPlaceholder("popupTabConstrucciones", "Construcciones / Medidas",
         "Cuadro de construcción, medición de vértices y edición cartográfica — módulo en desarrollo.");
     }
-  } else if (tabId === "archivo") await pintarPopupTabArchivo(clave, p);
-  else if (tabId === "numeros-oficiales") pintarPopupTabNumerosOficiales(p);
+  }   else if (tabId === "archivo") await pintarPopupTabArchivo(clave, p);
+  else if (tabId === "numeros-oficiales") {
+    if (typeof pintarPopupTabNumerosOficiales === "function") {
+      await pintarPopupTabNumerosOficiales(p);
+    } else {
+      pintarPopupTabPlaceholder("popupTabNumerosOficiales", "Números Oficiales",
+        "Mapa de colindantes y números oficiales cercanos — recargue la página con Ctrl+F5.");
+    }
+  }
   else if (tabId === "carta-urbana") {
     pintarPopupTabPlaceholder("popupTabCartaUrbana", "Carta Urbana 2040",
       "Consulta del plano de carta urbana 2040 para el predio — por integrar capa o documento.");

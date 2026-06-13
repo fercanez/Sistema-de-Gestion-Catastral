@@ -8,10 +8,10 @@
   <link rel="stylesheet" href="css/00-base.css?v=20260610_v125_portal">
   <link rel="stylesheet" href="css/10-mapa.css?v=20260610_v125_portal">
   <link rel="stylesheet" href="css/20-ficha.css?v=20260610_v125_portal">
-  <link rel="stylesheet" href="css/30-tablas.css?v=20260610_v125_portal">
+  <link rel="stylesheet" href="css/30-tablas.css?v=20260613_v102_busqueda">
   <link rel="stylesheet" href="css/40-modales.css?v=20260610_v125_portal">
   <link rel="stylesheet" href="css/50-modulos.css?v=20260611_v150_panel_ocultar">
-  <link rel="stylesheet" href="css/55-modulos-portal.css?v=20260612_v91_foto_lightbox">
+  <link rel="stylesheet" href="css/55-modulos-portal.css?v=20260613_v101_numof_cp">
 </head>
 
 <body>
@@ -235,7 +235,7 @@
     <div class="card-panel consulta-unificada">
       <div class="section-label">Búsqueda catastral</div>
 
-      <input type="text" id="claveInput" placeholder="CLAVE CATASTRAL">
+      <input type="text" id="claveInput" placeholder="CLAVE CATASTRAL O MANZANA (ej. ST311)">
       <input type="text" id="nombreInput" placeholder="NOMBRE / RAZÓN SOCIAL">
 
       <div class="busqueda-grid-2">
@@ -245,7 +245,10 @@
 
       <input type="text" id="coloniaInput" placeholder="COLONIA">
 
-      <button type="button" class="btn-busqueda-unica" onclick="buscarAvanzado()">🔎 Buscar</button>
+      <div class="busqueda-acciones">
+        <button type="button" class="btn-busqueda-unica" onclick="buscarAvanzado()">🔎 Buscar</button>
+        <button type="button" class="btn-busqueda-limpiar" onclick="limpiarBusquedaCatastral()">Limpiar</button>
+      </div>
 
       <div id="contadorBusquedaGeneral" class="contador-busqueda contador-general">Sin búsqueda realizada</div>
 
@@ -629,7 +632,7 @@
 <button id="btnMostrarLeyenda" class="btn-mostrar-leyenda oculto" onclick="toggleLeyendaDinamica()">Leyenda</button>
 
 <footer id="footerInstitucional" class="footer-institucional">
-  <span id="footerVersionInst">SGC v91 · Visor foto ampliada</span>
+  <span id="footerVersionInst">SGC v107 · Cedula layout mapa</span>
   <span class="footer-inst-copy">© Municipio de Mexicali, Baja California</span>
   <button type="button" class="footer-inst-ayuda" onclick="alert('Manual de usuario en preparación.')">Ayuda</button>
 </footer>
@@ -948,13 +951,16 @@
 <script src="js/00-nucleo.js?v=20260609_v144_mapa_colonias"></script>
 <script src="js/10-mapa.js?v=20260611_v151_panel_ocultar"></script>
 <script src="js/20-ficha.js?v=20260612_v91_foto_lightbox"></script>
-<script src="js/40-pdf.js?v=20260612_v91_foto_lightbox"></script>
-<script src="js/30-busqueda.js?v=20260609_v145_panel_capas"></script>
-<script src="js/05-modulos-portal.js?v=20260612_v91_foto_lightbox"></script>
-<script src="js/06-construcciones-medicion.js?v=20260612_v91_foto_lightbox"></script>
+<script src="js/40-pdf.js?v=20260613_v105_cedula_map"></script>
+<script src="js/30-busqueda.js?v=20260613_v102_busqueda"></script>
+<script src="js/05-modulos-portal.js?v=20260612_v94_numof_capas"></script>
+<script src="js/06-construcciones-medicion.js?v=20260612_v94_numof_capas"></script>
+<script src="js/07-numeros-oficiales.js?v=20260613_v105_cedula_map"></script>
+<script src="js/43-ficha-numero-oficial.js?v=20260613_v107_cedula_layout"></script>
 <script src="js/50-admin.js?v=20260610_v125_portal"></script>
 <script src="js/60-propietarios.js?v=20260609_v143_ficha_rapida"></script>
-<script src="js/70-movimientos.js?v=20260610_v125_portal"></script>
+<script src="js/70-movimientos.js?v=20260613_v106_cedula_preview"></script>
+<script src="js/44-cedula-numero-oficial-preview.js?v=20260613_v107_cedula_layout"></script>
 <script src="js/41-ficha-preview.js?v=20260612_v91_foto_lightbox"></script>
 <script src="js/42-ficha-cartografia.js?v=20260612_v91_foto_lightbox"></script>
 <script src="js/80-zonas.js?v=20260610_v125_portal"></script>

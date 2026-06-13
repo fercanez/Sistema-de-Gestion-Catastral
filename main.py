@@ -72,6 +72,7 @@ def root():
         "ficha_titular_vigente": True,
         "fotografias_expediente": True,
         "fotografias_borra_disco": True,
+        "numeros_oficiales_cercanos": True,
     }
 
 
