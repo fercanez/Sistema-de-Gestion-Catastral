@@ -1204,6 +1204,9 @@ async function pintarPopupPredioTab(tabId, p) {
   if (tabAnterior === "numeros-oficiales" && tabId !== "numeros-oficiales") {
     if (typeof destruirPopupNumerosOficiales === "function") destruirPopupNumerosOficiales();
   }
+  if (tabAnterior === "carta-urbana" && tabId !== "carta-urbana") {
+    if (typeof destruirPopupCartaUrbana === "function") destruirPopupCartaUrbana();
+  }
   document.querySelectorAll(".popup-predio-tab").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.tab === tabId);
   });
@@ -1230,8 +1233,12 @@ async function pintarPopupPredioTab(tabId, p) {
     }
   }
   else if (tabId === "carta-urbana") {
-    pintarPopupTabPlaceholder("popupTabCartaUrbana", "Carta Urbana 2040",
-      "Consulta del plano de carta urbana 2040 para el predio — por integrar capa o documento.");
+    if (typeof pintarPopupTabCartaUrbana === "function") {
+      await pintarPopupTabCartaUrbana(p);
+    } else {
+      pintarPopupTabPlaceholder("popupTabCartaUrbana", "Carta Urbana 2040",
+        "Consulta de zonificación 2040 — recargue la página con Ctrl+F5.");
+    }
   } else if (tabId === "colonia") pintarPopupTabColonia(p);
   else if (tabId === "zona-homogenea") pintarPopupTabZonaHomogenea(p);
 }

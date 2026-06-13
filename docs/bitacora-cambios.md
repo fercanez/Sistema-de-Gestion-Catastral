@@ -219,6 +219,42 @@ Se observaron respuestas correctas para rutas como:
 
 ---
 
+## 2026-06-13 - Carta Urbana 2040 (visor v108–v118)
+
+**Tipo:** despliegue  
+**Responsable:** desarrollo catastral  
+**Entorno:** producción / repositorio
+
+### Resumen
+Implementación completa de la pestaña **Carta Urbana 2040** en popup predio: consulta de sector y uso de suelo 2040, mapa WMS, panel de capas, ficha imprimible con simbología, y endpoint API de apoyo.
+
+### Cambios aplicados
+- Nuevo `js/08-carta-urbana.js` — pestaña, mapa OL, capas usos/sectores, fallback WMS cliente.
+- Nuevo `js/45-ficha-carta-urbana-preview.js` — vista previa e impresión carta carta 8.5×11.
+- `routers/padron.py` — `GET /padron/{clave}/carta-urbana-2040`, consulta sector (GeoNode + WMS).
+- `js/05-modulos-portal.js`, `css/55-modulos-portal.css`, `index.html` — integración, estilos guinda, leyenda azul punteada sectores.
+- Predio consultado en mapa: contorno negro punteado sin relleno (consulta, preview e impresión).
+- Panel capas flotante sobre mapa con cierre **−**; botón Capas en barra superior.
+- `main.py` — flag `carta_urbana_2040: true`.
+- Documentación: `README.md` actualizado a **SGC v118**.
+
+### Respaldos
+- commit en repositorio Git (rama `main`).
+
+### Validación realizada
+- Pruebas visor: claves ST312014, ST312031, Q5042014, Q5042019, RU008132, I5018001.
+- Sector vía capa WMS `sectores`; uso vía `usos_prop_au40`.
+- Usuario confirmó despliegue y funcionamiento en producción.
+
+### Resultado
+- exitoso
+
+### Observaciones
+- Reiniciar API tras subir `routers/padron.py`: `systemctl restart catastro-api`.
+- Frontend: subir 4 archivos (`index.html`, `08`, `45`, `55-modulos-portal.css`) + Ctrl+F5.
+
+---
+
 ## Plantilla en blanco para nuevas entradas
 
 ## YYYY-MM-DD HH:MM - Título corto del cambio

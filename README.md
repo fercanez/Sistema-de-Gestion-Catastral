@@ -92,6 +92,9 @@ Componentes principales identificados:
   - `js/30-busqueda.js` — búsqueda y selección de predios
   - `js/05-modulos-portal.js` — portal por módulos y popup predio
   - `js/06-construcciones-medicion.js` — construcciones/medición en popup
+  - `js/07-numeros-oficiales.js` — números oficiales cercanos en popup
+  - `js/08-carta-urbana.js` — pestaña Carta Urbana 2040 (mapa WMS, sector, capas)
+  - `js/45-ficha-carta-urbana-preview.js` — ficha imprimible Carta Urbana 2040
   - `js/50-admin.js` … `js/99-init.js` — admin, propietarios, movimientos, init
   - Respaldos monolíticos en `respaldo de originales/` (`catastro.js`, `catastro.css`)
 
@@ -115,40 +118,49 @@ Tras cambios en JS/CSS, actualizar el parámetro `?v=` en `index.html`. Referenc
 
 | Archivo | Versión |
 |---------|---------|
-| `css/50-modulos.css`, `css/55-modulos-portal.css` | `v149_ocultar_tabs` |
-| `js/05-modulos-portal.js` | `v149_ocultar_tabs` |
-| `js/10-mapa.js` | `v148_solo_tabs` |
-| `js/30-busqueda.js` | `v145_panel_capas` |
-| `js/90-mantenimiento.js` | `v141_adeudos` |
+| `css/55-modulos-portal.css` | `v118_carta_predio_g` |
+| `js/05-modulos-portal.js` | `v108_carta_urbana` |
+| `js/08-carta-urbana.js` | `v118_carta_predio_g` |
+| `js/45-ficha-carta-urbana-preview.js` | `v118_carta_predio_g` |
+| Pie visor (`footerVersionInst`) | **SGC v118 · Contorno predio grueso** |
 
 ---
 
-## Estado actual del visor (10 jun 2026)
+## Estado actual del visor (13 jun 2026)
 
-Trabajo reciente en **Gestión Catastral** (sesión en curso, pendiente commit):
+### Carta Urbana 2040 — **v108–v118** (validado en producción)
 
-### Portal y panel lateral
+Pestaña **Carta Urbana 2040** en popup predio (Gestión Catastral):
+
+| Área | Implementación |
+|------|----------------|
+| **Consulta** | Panel izq.: clave, uso padrón, **Sector** (capa `sectores`), uso permitido (`usos_prop_au40`). Mapa OL con WMS usos + sectores + predio vectorial. |
+| **Predio en mapa** | Contorno **negro punteado**, sin relleno (deja ver uso de suelo). |
+| **Capas** | Botón en barra superior; panel flotante **sobre el mapa** (esquina sup. der.) con botón **−** para ocultar. |
+| **Ficha / PDF** | `js/45-ficha-carta-urbana-preview.js`: encabezado con clave (sin nombre propietario), simbología horizontal de usos, plano imprimible con zoom/capas en toolbar de vista previa. |
+| **Estilos** | Marcos de datos en **guinda** `#703341`; leyenda sectores **azul punteado**. |
+
+**Backend:** `GET /padron/{clave}/carta-urbana-2040` (y alias `/predios/...`) en `routers/padron.py` — intersección GeoNode + fallback WMS GetFeatureInfo para sector y usos. Tras desplegar API: `systemctl restart catastro-api`.
+
+**Archivos clave:** `js/08-carta-urbana.js`, `js/45-ficha-carta-urbana-preview.js`, `css/55-modulos-portal.css`, `js/05-modulos-portal.js`, `routers/padron.py`, `index.html`.
+
+### Portal y panel lateral (sesiones previas)
 - Modo **Gestión Catastral**: panel izquierdo con **Consulta** + **Capas** únicamente.
-- Ocultas en ese modo: Herramientas, Zonas H., Condominios, Movimientos, Admin (clase `tab-modulo-extra` + CSS + JS `ocultarTabsExtraGestionCatastral()`).
-- Ficha del predio en **popup** (`popupPredioWorkspace`); búsqueda y leyenda integrada en el panel.
+- Ocultas en ese modo: Herramientas, Zonas H., Condominios, Movimientos, Admin.
+- Ficha del predio en **popup**; búsqueda y leyenda integrada en el panel.
 
 ### Capas del mapa (Gestión Catastral)
 - **Inicio:** solo **colonias** WMS al 100 %; predios WMS apagados.
 - **Al seleccionar predio:** zoom automático + encendido de capa predios WMS.
-- Sincronización checkbox ↔ capa: `sincronizarCapasWmsDesdeControles()` en `js/10-mapa.js`.
 
-### Backend / mantenimiento
-- Importación **Adeudos 2026** desde Excel (~439k filas): `POST /padron/mantenimiento/adeudos/importar` (`routers/padron.py`).
-- UI: botón en Movimientos → Catálogos → **Adeudos 2026** (`js/90-mantenimiento.js`).
-- Optimización carga ficha: caché y menos peticiones duplicadas (`js/30-busqueda.js`, `js/20-ficha.js`, `js/60-propietarios.js`).
+### Números oficiales y cédula (v105–v107)
+- Pestaña números oficiales con mapa, ficha e impresión.
+- Cédula de movimiento con vista previa cartográfica (`js/44-cedula-numero-oficial-preview.js`).
 
-### Pendiente para siguiente sesión
-- [ ] Confirmar despliegue completo de `v149_ocultar_tabs` en producción (panel + pestañas ocultas).
-- [ ] Validar capas: colonias solas al entrar; predios al seleccionar; toggles en pestaña Capas.
-- [ ] Integrar herramientas del panel de trabajo en **fichas del predio** según privilegios (Herramientas, Zonas, Condominios, Movimientos, Admin).
-- [ ] Revisar consulta WFS construcciones (`construccionesmxli`) — timeout en GeoServer para claves como `ST312031`.
-- [ ] Unificar cache busters en `index.html` y crear **commit** con todos los cambios locales sin commitear.
-- [ ] Post-import adeudos (opcional): `ANALYZE catalogos.padron_2026;`
+### Pendiente / mejoras futuras
+- [ ] Despliegue permanente del endpoint carta urbana en API si aún no está en todos los entornos.
+- [ ] Revisar consulta WFS construcciones (`construccionesmxli`) — timeout GeoServer en algunas claves.
+- [ ] Integrar herramientas del panel de trabajo en fichas del predio según privilegios.
 
 ---
 

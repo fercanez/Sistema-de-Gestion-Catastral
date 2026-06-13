@@ -73,6 +73,7 @@ def root():
         "fotografias_expediente": True,
         "fotografias_borra_disco": True,
         "numeros_oficiales_cercanos": True,
+        "carta_urbana_2040": True,
     }
 
 

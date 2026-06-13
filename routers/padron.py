@@ -1,7 +1,10 @@
 """Router de consulta al padron y predios (busqueda, ficha, mapa)."""
 import csv
 import io
+import json
 import re
+import urllib.parse
+import urllib.request
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -626,6 +629,376 @@ def numeros_oficiales_cercanos_predio(
 ):
     """Alias del endpoint de numeros oficiales cercanos."""
     return _numeros_oficiales_cercanos_payload(clave, limite_misma_calle, limite_otras_calles)
+
+
+CARTA_URBANA_2040_WMS_URL = "https://fcnarqnodo.hopto.org/geoserver/geonode/wms"
+CARTA_URBANA_2040_WMS_LAYER = "usos_prop_au40"
+CARTA_URBANA_2040_TABLAS = ["usos_prop_au40"]
+CARTA_URBANA_2040_WMS_LAYERS = [
+    "usos_prop_au40",
+    "geonode:usos_prop_au40",
+]
+CARTA_URBANA_SECTORES_TABLAS = ["sectores"]
+CARTA_URBANA_SECTORES_WMS_LAYERS = [
+    "sectores",
+    "geonode:sectores",
+]
+
+
+def _normalizar_atributos_carta_urbana(props: Optional[dict]) -> dict:
+    if not props:
+        return {}
+    claves = {str(k).lower(): k for k in props.keys()}
+
+    def tomar(*candidatos: str) -> str:
+        for cand in candidatos:
+            cand_l = cand.lower()
+            for kl, orig in claves.items():
+                if cand_l in kl:
+                    val = props.get(orig)
+                    if val is not None and str(val).strip() not in ("", "NULL", "null"):
+                        return str(val).strip()
+        return ""
+
+    return {
+        "zona": tomar("zona", "zonific", "clave_zona", "c_zona", "simbolo", "simbol", "clave", "codigo", "cod_uso"),
+        "uso_permitido": tomar(
+            "usoprop_40", "usoprop", "uso", "uso_suelo", "g_uso", "descripcion", "nom_uso", "tipo_uso",
+            "desc_uso", "usos_prop", "prop_au40", "destino", "clasific"
+        ),
+        "densidad": tomar("densidad", "hab_ha", "viviendas", "vivienda", "dens"),
+        "nivel": tomar("nivel", "altura", "plantas", "n_max", "niveles"),
+        "instrumento": tomar("instrumento", "programa", "pdu", "plan", "carta", "au40"),
+        "observaciones": tomar("observ", "nota", "leyenda", "coment"),
+        "nombre_zona": tomar("nombre", "nom_zona", "desc_zona", "etiqueta", "desc", "descripcion"),
+    }
+
+
+def _extraer_codigo_sector(props: Optional[dict]) -> str:
+    if not props:
+        return ""
+    claves = {str(k).lower(): k for k in props.keys()}
+
+    def tomar(*candidatos: str) -> str:
+        for cand in candidatos:
+            cand_l = cand.lower()
+            for kl, orig in claves.items():
+                if cand_l == kl or cand_l in kl:
+                    val = props.get(orig)
+                    if val is not None and str(val).strip() not in ("", "NULL", "null"):
+                        return str(val).strip()
+        return ""
+
+    return tomar(
+        "sector", "sectores", "letra", "clave_sector", "simbolo", "simbol",
+        "codigo", "cod_sector", "id_sector", "nom_sector"
+    )
+
+
+def _consultar_sector_geonode(cur, ewkt_predio: str) -> Optional[dict]:
+    for tabla in CARTA_URBANA_SECTORES_TABLAS:
+        if not re.fullmatch(r"[a-z0-9_]+", tabla or "", re.I):
+            continue
+        try:
+            cur.execute(
+                f"""
+                SELECT t.*
+                FROM public.{tabla} t
+                WHERE t.geom IS NOT NULL
+                  AND ST_Intersects(
+                        t.geom,
+                        ST_Transform(ST_GeomFromEWKT(%s), ST_SRID(t.geom))
+                  )
+                ORDER BY ST_Area(
+                    ST_Intersection(
+                        t.geom,
+                        ST_Transform(ST_GeomFromEWKT(%s), ST_SRID(t.geom))
+                    )
+                ) DESC NULLS LAST
+                LIMIT 1;
+                """,
+                (ewkt_predio, ewkt_predio),
+            )
+            row = cur.fetchone()
+            if not row:
+                continue
+            props = dict(row)
+            props.pop("geom", None)
+            codigo = _extraer_codigo_sector(props)
+            if not codigo:
+                continue
+            return {
+                "origen": "geonode",
+                "tabla": tabla,
+                "codigo": codigo,
+                "nombre": props.get("nombre") or props.get("nom_sector") or "",
+                "properties": props,
+            }
+        except Exception:
+            continue
+    return None
+
+
+def _consultar_sector_wms(lon: float, lat: float) -> Optional[dict]:
+    result = _consultar_carta_urbana_wms(float(lon), float(lat), CARTA_URBANA_SECTORES_WMS_LAYERS)
+    if not result:
+        return None
+    props = result.get("properties") or {}
+    codigo = _extraer_codigo_sector(props)
+    if not codigo:
+        return None
+    return {
+        "origen": result.get("origen") or "wms",
+        "layer": result.get("layer") or CARTA_URBANA_SECTORES_WMS_LAYERS[0],
+        "codigo": codigo,
+        "nombre": props.get("nombre") or props.get("nom_sector") or "",
+        "properties": props,
+    }
+
+
+def _listar_tablas_carta_urbana_geonode(cur) -> List[str]:
+    tablas: List[str] = []
+    for nombre in CARTA_URBANA_2040_TABLAS:
+        cur.execute("""
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = %s
+            LIMIT 1;
+        """, (nombre,))
+        if cur.fetchone():
+            tablas.append(nombre)
+
+    cur.execute("""
+        SELECT c.table_name
+        FROM information_schema.columns c
+        INNER JOIN information_schema.tables t
+            ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+        WHERE c.table_schema = 'public'
+          AND c.column_name = 'geom'
+          AND t.table_type = 'BASE TABLE'
+          AND (
+              c.table_name ILIKE '%%usos_prop%%'
+              OR c.table_name ILIKE '%%au40%%'
+              OR c.table_name ILIKE '%%carta%%urbana%%'
+              OR c.table_name ILIKE '%%2040%%'
+              OR c.table_name ILIKE '%%usos%%suelo%%'
+              OR c.table_name ILIKE '%%zonific%%'
+              OR c.table_name ILIKE '%%plan%%urbano%%'
+          )
+        GROUP BY c.table_name
+        ORDER BY
+            CASE
+                WHEN c.table_name = 'usos_prop_au40' THEN 0
+                WHEN c.table_name ILIKE '%%au40%%' THEN 1
+                WHEN c.table_name ILIKE '%%2040%%' THEN 2
+                ELSE 3
+            END,
+            c.table_name;
+    """)
+    for row in cur.fetchall():
+        nombre = row["table_name"]
+        if nombre not in tablas:
+            tablas.append(nombre)
+    return tablas
+
+
+def _consultar_carta_urbana_geonode(cur, ewkt_predio: str, tablas: List[str]) -> Optional[dict]:
+    for tabla in tablas:
+        if not re.fullmatch(r"[a-z0-9_]+", tabla or "", re.I):
+            continue
+        try:
+            cur.execute(
+                f"""
+                SELECT
+                    t.*,
+                    ST_AsGeoJSON(ST_Transform(t.geom, 4326))::json AS geometry
+                FROM public.{tabla} t
+                WHERE t.geom IS NOT NULL
+                  AND ST_Intersects(
+                        t.geom,
+                        ST_Transform(ST_GeomFromEWKT(%s), ST_SRID(t.geom))
+                  )
+                ORDER BY ST_Area(
+                    ST_Intersection(
+                        t.geom,
+                        ST_Transform(ST_GeomFromEWKT(%s), ST_SRID(t.geom))
+                    )
+                ) DESC NULLS LAST
+                LIMIT 1;
+                """,
+                (ewkt_predio, ewkt_predio),
+            )
+            row = cur.fetchone()
+            if not row:
+                continue
+            props = dict(row)
+            geometry = props.pop("geometry", None)
+            props.pop("geom", None)
+            return {
+                "origen": "geonode",
+                "tabla": tabla,
+                "properties": props,
+                "geometry": geometry,
+                "atributos": _normalizar_atributos_carta_urbana(props),
+            }
+        except Exception:
+            continue
+    return None
+
+
+def _consultar_carta_urbana_wms(lon: float, lat: float, layers: List[str]) -> Optional[dict]:
+    delta = 0.00045
+    bbox = f"{lon - delta},{lat - delta},{lon + delta},{lat + delta}"
+    for layer in layers:
+        params = {
+            "SERVICE": "WMS",
+            "VERSION": "1.1.1",
+            "REQUEST": "GetFeatureInfo",
+            "LAYERS": layer,
+            "QUERY_LAYERS": layer,
+            "STYLES": "",
+            "BBOX": bbox,
+            "WIDTH": "101",
+            "HEIGHT": "101",
+            "X": "50",
+            "Y": "50",
+            "SRS": "EPSG:4326",
+            "INFO_FORMAT": "application/json",
+            "FEATURE_COUNT": "5",
+        }
+        url = CARTA_URBANA_2040_WMS_URL + "?" + urllib.parse.urlencode(params)
+        try:
+            with urllib.request.urlopen(url, timeout=18) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            features = data.get("features") or []
+            if not features:
+                continue
+            props = features[0].get("properties") or {}
+            return {
+                "origen": "wms",
+                "layer": layer,
+                "properties": props,
+                "geometry": features[0].get("geometry"),
+                "atributos": _normalizar_atributos_carta_urbana(props),
+            }
+        except Exception:
+            continue
+    return None
+
+
+def _carta_urbana_2040_payload(clave: str) -> dict:
+    clave_norm = clave.upper().strip()
+    if not clave_norm:
+        raise HTTPException(status_code=400, detail="Clave catastral requerida")
+
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT
+            UPPER(TRIM(p.clave_catastral)) AS clave_catastral,
+            TRIM(COALESCE(p.descripcion_uso, '')) AS uso_padron,
+            TRIM(COALESCE(p.colonia, '')) AS colonia,
+            TRIM(COALESCE(p.delegacion, '')) AS delegacion,
+            ST_AsEWKT(ST_Transform(g.geom, 32611)) AS ewkt_32611,
+            ST_X(ST_Transform(ST_PointOnSurface(g.geom), 4326))::float AS lon,
+            ST_Y(ST_Transform(ST_PointOnSurface(g.geom), 4326))::float AS lat,
+            ST_AsGeoJSON(ST_Transform(g.geom, 4326))::json AS geometry
+        FROM catalogos.padron_2026 p
+        INNER JOIN catastro.predios g
+            ON UPPER(TRIM(g.clave_catastral)) = UPPER(TRIM(p.clave_catastral))
+        WHERE UPPER(TRIM(p.clave_catastral)) = %s
+          AND g.geom IS NOT NULL
+        LIMIT 1;
+    """, (clave_norm,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Predio no encontrado o sin geometría cartográfica")
+
+    lon = row.get("lon")
+    lat = row.get("lat")
+    ewkt = row.get("ewkt_32611")
+    carta = None
+    tablas_detectadas: List[str] = []
+
+    if get_geonode_conn is not None and ewkt:
+        try:
+            gconn = get_geonode_conn()
+            gcur = gconn.cursor()
+            tablas_detectadas = _listar_tablas_carta_urbana_geonode(gcur)
+            if tablas_detectadas:
+                carta = _consultar_carta_urbana_geonode(gcur, ewkt, tablas_detectadas)
+            gcur.close()
+            gconn.close()
+        except Exception:
+            carta = None
+
+    if carta is None and lon is not None and lat is not None:
+        carta = _consultar_carta_urbana_wms(float(lon), float(lat), CARTA_URBANA_2040_WMS_LAYERS)
+
+    sector = None
+    if get_geonode_conn is not None and ewkt:
+        try:
+            gconn = get_geonode_conn()
+            gcur = gconn.cursor()
+            sector = _consultar_sector_geonode(gcur, ewkt)
+            gcur.close()
+            gconn.close()
+        except Exception:
+            sector = None
+    if sector is None and lon is not None and lat is not None:
+        sector = _consultar_sector_wms(float(lon), float(lat))
+
+    wms_layer = (carta or {}).get("layer") or CARTA_URBANA_2040_WMS_LAYER
+    mensaje = ""
+    if not carta:
+        if tablas_detectadas:
+            mensaje = (
+                "No se intersectó el predio con usos_prop_au40. "
+                "Verifique geometría del predio o simbología de la capa."
+            )
+        else:
+            mensaje = (
+                "Capa usos_prop_au40 no detectada en GeoNode. "
+                "Publique geonode:usos_prop_au40 en el servidor WMS."
+            )
+
+    return {
+        "clave_catastral": clave_norm,
+        "uso_padron": row.get("uso_padron") or "",
+        "colonia": row.get("colonia") or "",
+        "delegacion": row.get("delegacion") or "",
+        "centroide": {"lon": lon, "lat": lat},
+        "geometry": row.get("geometry"),
+        "carta_urbana": carta,
+        "sector": sector,
+        "wms_url": CARTA_URBANA_2040_WMS_URL,
+        "wms_layer": wms_layer,
+        "wms_layers_intentadas": CARTA_URBANA_2040_WMS_LAYERS,
+        "tablas_geonode_detectadas": tablas_detectadas,
+        "mensaje": mensaje,
+    }
+
+
+@router.get("/padron/{clave}/carta-urbana-2040")
+def carta_urbana_2040_padron(
+    clave: str,
+    usuario_actual: dict = Depends(obtener_usuario_actual),
+):
+    """Consulta carta urbana 2040 intersectando el predio (GeoNode + WMS)."""
+    return _carta_urbana_2040_payload(clave)
+
+
+@router.get("/predios/{clave}/carta-urbana-2040")
+def carta_urbana_2040_predio(
+    clave: str,
+    usuario_actual: dict = Depends(obtener_usuario_actual),
+):
+    """Alias de consulta carta urbana 2040."""
+    return _carta_urbana_2040_payload(clave)
 
 
 def _numeros_oficiales_cercanos_payload(clave: str, limite_misma_calle: int, limite_otras_calles: int):

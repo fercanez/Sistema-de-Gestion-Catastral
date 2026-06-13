@@ -845,6 +845,39 @@ body.panel-oculto-activo .app-institucional .btn-mostrar-panel {
   display: none !important;
 }
 
+.popup-capas-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.popup-capas-menu-head strong {
+  color: #703341;
+  font-size: 11px;
+}
+
+.popup-capas-cerrar {
+  border: none;
+  background: #703341;
+  color: #fff;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 22px;
+}
+
+.popup-capas-cerrar:hover {
+  background: #8b4454;
+}
+
 .popup-capas-seccion + .popup-capas-seccion {
   margin-top: 8px;
   padding-top: 8px;
@@ -1794,12 +1827,267 @@ body.popup-archivo-foto-lightbox-abierto {
   top: 40px;
 }
 
+/* ══════════════ CARTA URBANA 2040 (popup predio) ══════════════ */
+.popup-carta-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 32%) 1fr;
+  gap: 12px;
+  min-height: 560px;
+  height: min(72vh, 680px);
+}
+
+.popup-carta-panel-izq {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.popup-carta-seccion {
+  background: #fff;
+  border: 1px solid #703341;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.popup-carta-seccion h4 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  color: #703341;
+}
+
+.popup-carta-seccion-zona {
+  border-color: #703341;
+  background: linear-gradient(180deg, #fdf8f9 0%, #fff 100%);
+}
+
+.popup-carta-campo {
+  display: grid;
+  grid-template-columns: minmax(110px, 38%) 1fr;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.78rem;
+  align-items: start;
+}
+
+.popup-carta-campo:last-child {
+  border-bottom: none;
+}
+
+.popup-carta-campo-destacado .popup-carta-valor {
+  color: #703341;
+  font-size: 0.86rem;
+}
+
+.popup-carta-campo-sector {
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #d8bdc5;
+}
+
+.popup-carta-valor-sector {
+  font-size: 1.35rem !important;
+  font-weight: 900 !important;
+  color: #703341 !important;
+  letter-spacing: 0.06em;
+}
+
+.popup-carta-mapa-head-actions .popup-btn-carta-ficha {
+  min-width: 118px;
+}
+
+.popup-carta-mapa-head-actions .popup-btn-capas {
+  order: 2;
+}
+
+.popup-carta-label {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.popup-carta-valor {
+  color: #703341;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.popup-carta-aviso {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.popup-carta-meta {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.popup-carta-cargando {
+  padding: 12px;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.popup-carta-mapa-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: visible;
+  background: #f8fafc;
+}
+
+.popup-carta-mapa-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.popup-carta-mapa-head-text strong {
+  display: block;
+  font-size: 0.92rem;
+  color: #0f172a;
+}
+
+.popup-carta-mapa-head-text span {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: #64748b;
+}
+
+.popup-carta-mapa-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.popup-carta-mapa-body {
+  position: relative;
+  flex: 1;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+
+.popup-carta-capas-menu {
+  display: none;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  left: auto;
+  width: min(248px, calc(100% - 24px));
+  max-height: min(340px, calc(100% - 24px));
+  overflow-y: auto;
+  z-index: 1000;
+  margin: 0;
+  pointer-events: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.popup-carta-capas-menu.popup-carta-capas-visible {
+  display: block !important;
+}
+
+.popup-carta-mapa {
+  position: relative;
+  flex: 1;
+  min-height: 420px;
+  overflow: hidden;
+  border-radius: 0;
+}
+
+.popup-carta-mapa-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  z-index: 1;
+}
+
+.popup-carta-mapa > .popup-mini-map-vacio {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  background: #e2e8f0;
+}
+
+.popup-carta-leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 6px 10px;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.72rem;
+  color: #475569;
+}
+
+.popup-carta-leyenda span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.popup-carta-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.popup-carta-swatch-predio {
+  background: transparent;
+  border: 3px dashed #111827;
+}
+
+.popup-carta-swatch-zona {
+  background: rgba(245, 158, 11, 0.35);
+  border-color: #b45309;
+}
+
+.popup-carta-swatch-wms {
+  background: linear-gradient(135deg, #fde68a, #fbbf24);
+}
+
+.popup-carta-swatch-sectores {
+  background: rgba(37, 99, 235, 0.12);
+  border: 2px dashed #2563eb;
+  border-radius: 2px;
+}
+
 @media (max-width: 960px) {
   .popup-construcciones-layout {
     grid-template-columns: 1fr;
   }
 
   .popup-numof-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .popup-carta-layout {
     grid-template-columns: 1fr;
   }
 
